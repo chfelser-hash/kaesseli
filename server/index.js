@@ -345,6 +345,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Haushaltsbudget läuft auf http://localhost:${PORT}  (Daten: ${DATA_DIR})`);
+  console.log(`Kässeli läuft auf http://localhost:${PORT}  (Daten: ${DATA_DIR})`);
   if (!auth.hasUsers) console.log('Noch kein Benutzer vorhanden – beim ersten Aufruf wird ein Konto angelegt.');
 });

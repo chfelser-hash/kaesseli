@@ -1,7 +1,7 @@
 {
-  "name": "haushaltsbudget",
+  "name": "kaesseli",
   "version": "1.0.0",
-  "description": "Haushaltsbudget als Web-App (PWA) – lokal oder auf einer Synology NAS betreibbar",
+  "description": "Kässeli – Haushaltsbudget als Web-App (PWA) – lokal oder auf einer Synology NAS betreibbar",
   "private": true,
   "type": "module",
   "main": "server/index.js",

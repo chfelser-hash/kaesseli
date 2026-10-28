@@ -1,6 +1,6 @@
 {
-  "name": "Haushaltsbudget",
-  "short_name": "Budget",
+  "name": "Kässeli – Haushaltsbudget",
+  "short_name": "Kässeli",
   "description": "Ausgaben erfassen und Budget überwachen",
   "lang": "de-CH",
   "start_url": "/#erfassen",

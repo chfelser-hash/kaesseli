@@ -1,13 +1,13 @@
 services:
-  budget:
+  kaesseli:
     build: .
-    image: haushaltsbudget:latest
-    container_name: haushaltsbudget
+    image: kaesseli:latest
+    container_name: kaesseli
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
-      # Daten bleiben ausserhalb des Containers (auf der Synology z.B. /volume1/docker/budget/data)
+      # Daten bleiben ausserhalb des Containers (auf der Synology z.B. /volume1/docker/kaesseli/data)
       - ./data:/data
     environment:
       - TZ=Europe/Zurich

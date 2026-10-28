@@ -85,14 +85,14 @@ export function render() {
   const v = VIEWS.find((x) => x.id === state.view) || VIEWS[0];
   const el = v.render();
   main().replaceChildren(el);
-  document.title = `${v.label} · Budget`;
+  document.title = `${v.label} · Kässeli`;
 }
 
 function renderChrome() {
   const years = yearList();
   const header = document.getElementById('topbar');
   header.replaceChildren(
-    h('div', { class: 'brand' }, h('span', { class: 'logo' }, 'CHF'), h('span', null, 'Budget')),
+    h('div', { class: 'brand' }, h('span', { class: 'logo' }, 'CHF'), h('span', null, 'Kässeli')),
     h('nav', { class: 'tabs' },
       VIEWS.map((v) => h('a', { href: '#' + v.id, class: 'tab' + (state.view === v.id ? ' on' : '') }, h('span', { class: 'ti' }, icon(v.id)), h('span', null, v.label)))
     ),
@@ -124,7 +124,7 @@ async function showLogin(needsSetup) {
       }
     },
   },
-    h('div', { class: 'brand big' }, h('span', { class: 'logo' }, 'CHF'), h('span', null, 'Budget')),
+    h('div', { class: 'brand big' }, h('span', { class: 'logo' }, 'CHF'), h('span', null, 'Kässeli')),
     h('h1', null, needsSetup ? 'Erstes Konto anlegen' : 'Anmelden'),
     needsSetup ? h('p', { class: 'muted' }, 'Weitere Personen kannst du danach unter «Mehr» hinzufügen.') : null,
     h('label', null, 'Name', name),

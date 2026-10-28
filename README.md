@@ -1,6 +1,6 @@
-# Haushaltsbudget
+# Kässeli
 
-Web-App für das Haushaltsbudget – Nachfolger der Excel-Datei.
+Haushaltsbudget als Web-App – Nachfolger der Excel-Datei.
 Läuft im Browser auf Windows und Android (installierbar als App), die Daten liegen auf der eigenen Synology NAS.
 
 - **Erfassen** – Ausgaben in Sekunden eintragen: Betrag, Topf, Kategorie, Zahlungsmittel. Beträge dürfen gerechnet werden (`1500+120`). Sammelerfassung für ganze Kreditkartenabrechnungen (ein Betrag pro Zeile). Bekannte Notizen füllen Topf und Kategorie automatisch aus.
@@ -47,24 +47,24 @@ Hinweise zur Übernahme:
 Die DS218+ (Intel x86) unterstützt den **Container Manager** (DSM 7.2).
 
 1. Im Paket-Zentrum **Container Manager** installieren.
-2. In der File Station einen Ordner anlegen, z.B. `/docker/budget`, und den Inhalt dieses Repos hineinkopieren (oder per SSH: `git clone … /volume1/docker/budget`).
+2. In der File Station einen Ordner anlegen, z.B. `/docker/kaesseli`, und den Inhalt dieses Repos hineinkopieren (oder per SSH: `git clone https://github.com/chfelser-hash/kaesseli.git /volume1/docker/kaesseli`).
 3. Container Manager → **Projekt** → **Erstellen**
-   - Projektname: `budget`
-   - Pfad: `/docker/budget`
+   - Projektname: `kaesseli`
+   - Pfad: `/docker/kaesseli`
    - Quelle: «Vorhandene docker-compose.yml verwenden»
    - Erstellen – das Image wird auf der NAS gebaut und gestartet.
 4. Aufruf im Heimnetz: `http://<IP-der-NAS>:8080`, erstes Konto anlegen, dann unter **Mehr** die zweite Person hinzufügen.
 
-Die Daten liegen in `/docker/budget/data` und werden von Hyper Backup mitgesichert, wenn der Ordner `docker` im Backup-Job ist.
+Die Daten liegen in `/docker/kaesseli/data` und werden von Hyper Backup mitgesichert, wenn der Ordner `docker` im Backup-Job ist.
 
 ### Zugriff von unterwegs (HTTPS)
 
 Für Android-Installation und Zugriff von ausserhalb wird HTTPS benötigt:
 
 1. **Systemsteuerung → Externer Zugriff → DDNS**: z.B. `xyz.synology.me` einrichten.
-2. **Systemsteuerung → Sicherheit → Zertifikat**: Let's-Encrypt-Zertifikat für `budget.xyz.synology.me` (oder die DDNS-Adresse) erstellen.
+2. **Systemsteuerung → Sicherheit → Zertifikat**: Let's-Encrypt-Zertifikat für `kaesseli.xyz.synology.me` (oder die DDNS-Adresse) erstellen.
 3. **Systemsteuerung → Anmeldeportal → Erweitert → Reverse Proxy → Erstellen**
-   - Quelle: HTTPS, Hostname `budget.xyz.synology.me`, Port 443
+   - Quelle: HTTPS, Hostname `kaesseli.xyz.synology.me`, Port 443
    - Ziel: HTTP, `localhost`, Port 8080
    - Unter «Benutzerdefinierter Header» → «Erstellen» → «WebSocket» (schadet nicht) und zusätzlich `X-Forwarded-Proto` = `$scheme`.
 4. Im Router Port 443 auf die NAS weiterleiten (falls nicht schon geschehen).
