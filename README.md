@@ -119,7 +119,7 @@ Bei jedem Push prüft GitHub die App automatisch (`.github/workflows/tests.yml`)
 
 | Prüfung | Was getestet wird |
 |---|---|
-| Rechenlogik & Server (Node 20 und 22) | Budget- und Spar-Rechnung, Monitoring, Unterkategorien, Abrechnungszyklen, CSV/Viseca-Import; Server: Anmeldung, Schutz ohne Login, Sperre nach Fehlversuchen, Buchungen, Budget, Abrechnungen, Sicherung/Wiederherstellung, Neustart, frische Installation |
+| Rechenlogik & Server (Node 22 und 24) | Budget- und Spar-Rechnung, Monitoring, Unterkategorien, Abrechnungszyklen, CSV/Viseca-Import; Server: Anmeldung, Schutz ohne Login, Sperre nach Fehlversuchen, Buchungen, Budget, Abrechnungen, Sicherung/Wiederherstellung, Neustart, frische Installation |
 | Oberfläche im Browser | Alle Tabs ohne JavaScript-Fehler, Budget speichern, Ausgabe erfassen, Rückfrage beim Löschen, Dialoge, «Jetzt abrechnen», Kreditkarten-Text importieren inkl. Duplikaterkennung, Übersicht, Handy-Ansicht ohne seitliches Scrollen, Abmelden |
 | Docker-Image | Image bauen und wie auf der DS218+ mit leerem Datenordner starten |
 
