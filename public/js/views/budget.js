@@ -228,7 +228,7 @@ function summaryCard() {
       if (c.savingMonthly < -0.5) { cls = 'bad'; text = `Jeden Monat fehlen ${fmt0(-c.savingMonthly)} – schon ohne Sparen reicht der Lohn nicht.`; }
       else if (diff >= -0.5) { cls = 'good'; text = `Sparziel erreichbar: ${fmt0(c.savingYearly)} von ${fmt0(c.savingTargetYearly)} im Jahr (${signed(diff)}).`; }
       else { cls = 'warn'; text = `Sparziel nicht erreichbar: ${fmt0(c.savingYearly)} von ${fmt0(c.savingTargetYearly)} im Jahr (${signed(diff)}).`; }
-      if (c.savingMonthly >= -0.5 && c.fixedSavingYearly) text += ` Total gespart inkl. ${c.fixedSaving.map((x) => x.name).join(', ')}: ${fmt0(c.totalSavingYearly)}${c.incomeYearly ? ` (${quota(c.totalSavingYearly, c.incomeYearly)} vom Einkommen)` : ''}.`;
+      if (c.savingMonthly >= -0.5 && c.fixedSavingYearly) text += ` Total gespart inkl. fester Sparposten: ${fmt0(c.totalSavingYearly)}${c.incomeYearly ? ` (${quota(c.totalSavingYearly, c.incomeYearly)} vom Einkommen)` : ''}.`;
     } else if (yb < -0.5) { cls = 'bad'; text = `Geht nicht auf: Übers Jahr fehlen ${fmt0(-yb)}.`; }
     else if (mb < -0.5 && c.incomeExtra > 0) { cls = 'warn'; text = `Geht auf – aber nur dank dem 13. Lohn: Jeden Monat fehlen ${fmt0(-mb)}, übers Jahr bleiben ${fmt0(yb)}.`; }
     else if (mb < -0.5) { cls = 'bad'; text = `Jeden Monat fehlen ${fmt0(-mb)}.`; }
@@ -256,7 +256,7 @@ function summaryCard() {
           row(diff < -0.5 ? 'unter dem Ziel' : 'über dem Ziel', diff, 'result ' + (diff < -0.5 ? 'neg' : 'pos')),
           c.fixedSaving.length ? h('div', { class: 'flow-total' },
             row('Sparkonto', Math.max(0, c.savingYearly), 'in'),
-            ...c.fixedSaving.map((x) => row(`${x.name} (fest)`, x.yearly, 'in')),
+            row(`Feste Sparposten (${c.fixedSaving.map((x) => x.name).join(', ')})`, c.fixedSavingYearly, 'in'),
             row(`Total gespart · ${quota(c.totalSavingYearly, c.incomeYearly)} vom Einkommen`, c.totalSavingYearly, 'result pos')) : null))
       );
     } else {

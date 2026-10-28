@@ -55,15 +55,16 @@ function potCard(mon) {
   );
 }
 
-/** Sparen: erwartete Einzahlungen statt fixer Monatsrate, Prognose gegen das Sparziel */
+/** Sparen: bisher gespart (Sparkonto + feste Spar-Posten wie Säule 3a anteilig), keine Prognose */
 function savingCard(mon) {
   const { pot } = mon;
   const cur = mon.lastRealized ? mon.months[mon.lastRealized - 1] : null;
-  const vsTarget = mon.forecast - mon.target;
   const fixed = mon.fixedSaving || [];
-  const fixedSum = fixed.reduce((a, x) => a + x.yearly, 0);
-  const restMonths = mon.months.slice(mon.lastRealized);
-  const restLabel = restMonths.length ? MONTHS_SHORT[restMonths[0].month - 1] + '–' + MONTHS_SHORT[11] : '';
+  const months = mon.lastRealized; // gelaufene Monate des Jahres
+  const fixedToDate = fixed.map((x) => ({ ...x, toDate: (x.yearly / 12) * months }));
+  const fixedSum = fixedToDate.reduce((a, x) => a + x.toDate, 0);
+  const open = mon.target - mon.actualTotal;
+  const upTo = months ? MONTHS_SHORT[months - 1] : '';
   return h('section', { class: 'card pot-card', style: { '--c': pot.color } },
     h('header', null, h('span', { class: 'dot' }), h('h3', null, pot.name), h('span', { class: 'muted small' }, pot.account)),
     h('div', { class: 'kpis' },
@@ -74,15 +75,13 @@ function savingCard(mon) {
     sparkline(mon),
     h('button', { class: 'link link-year', onclick: () => go('erfassen', { year: state.year, pot: pot.key }) }, 'Alle Buchungen ' + state.year + ' →'),
     h('dl', { class: 'facts' },
-      h('dt', null, 'Sparziel Jahr'), h('dd', null, fmt0(mon.target)),
-      h('dt', null, 'Bisher eingezahlt'), h('dd', null, fmt0(mon.actualTotal)),
-      restMonths.length ? [h('dt', null, 'Noch erwartet (' + restLabel + ')'), h('dd', null, fmt0(Math.max(mon.plannedTotal, mon.expectedRest)))] : null,
-      h('dt', null, 'Prognose Jahresende'), h('dd', null, fmt0(mon.forecast)),
-      h('dt', null, vsTarget < 0 ? 'unter dem Ziel' : 'über dem Ziel'), h('dd', { class: vsTarget < 0 ? 'neg' : 'pos' }, fmtSigned(vsTarget)),
-      ...fixed.map((x) => [h('dt', null, x.name + ' (fest)'), h('dd', null, fmt0(x.yearly))]),
-      fixed.length ? [h('dt', { class: 'strong' }, 'Total gespart (Prognose)'), h('dd', { class: 'strong' }, fmt0(mon.forecast + fixedSum))] : null,
+      h('dt', null, 'Sparziel Sparkonto'), h('dd', null, fmt0(mon.target)),
+      h('dt', null, 'Eingezahlt Sparkonto'), h('dd', null, fmt0(mon.actualTotal)),
+      h('dt', null, open > 0 ? 'noch offen bis Ziel' : 'über dem Ziel'), h('dd', { class: open > 0 ? '' : 'pos' }, fmt0(Math.abs(open))),
+      fixed.length ? [h('dt', null, 'Feste Sparposten' + (upTo ? ' bis ' + upTo : ''), h('small', { class: 'muted' }, ' (' + fixed.map((x) => x.name).join(', ') + ', ' + fmt0(fixed.reduce((a, x) => a + x.yearly, 0) / 12) + '/Mt)')), h('dd', null, fmt0(fixedSum))] : null,
+      fixed.length ? [h('dt', { class: 'strong' }, 'Total gespart' + (upTo ? ' bis ' + upTo : '')), h('dd', { class: 'strong' }, fmt0(mon.actualTotal + fixedSum))] : null,
     ),
-    h('p', { class: 'hint' }, 'Erwartet = was nach den festen Überweisungen jeden Monat übrig bleibt; im Dezember inkl. 13. Lohn.')
+    h('p', { class: 'hint' }, 'Erwartet = was nach den festen Überweisungen jeden Monat übrig bleibt; im Dezember inkl. 13. Lohn.' + (fixed.length ? ' Feste Sparposten = Budgetposten mit Haken «Sparen»; sie werden monatlich zurückgestellt und hier anteilig gezählt.' : ''))
   );
 }
 
