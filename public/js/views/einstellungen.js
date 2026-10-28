@@ -61,7 +61,7 @@ function accountsCard() {
       h('li', null, h('span', null, a),
         h('span', { class: 'row-actions' },
           h('button', { class: 'icon-btn sm', title: 'Nach oben', disabled: i === 0, onclick: () => { const n = [...accounts]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; saveSettings({ accounts: n }); } }, '↑'),
-          h('button', { class: 'icon-btn sm', title: 'Entfernen', onclick: () => saveSettings({ accounts: accounts.filter((x) => x !== a) }) }, '✕')))
+          h('button', { class: 'icon-btn sm', title: 'Entfernen', onclick: async () => { if (await confirmDialog('Zahlungsmittel entfernen', `«${a}» entfernen? Bestehende Buchungen behalten ihre Angabe.`, 'Entfernen', true)) saveSettings({ accounts: accounts.filter((x) => x !== a) }); } }, '✕')))
     )),
     h('form', { class: 'row gap', onsubmit: (e) => { e.preventDefault(); add(); } },
       (input = h('input', { placeholder: 'z.B. Migros Kreditkarte', class: 'grow' })),
@@ -82,7 +82,7 @@ function rulesCard() {
         h('tbody', null, rules.map((r) => h('tr', null,
           h('td', null, r.match),
           h('td', null, potName(r.pot) + (r.cat ? ' / ' + r.cat : '')),
-          h('td', { class: 'row-actions' }, h('button', { class: 'icon-btn sm', title: 'Löschen', onclick: () => saveSettings({ rules: rules.filter((x) => x !== r) }) }, '✕'))
+          h('td', { class: 'row-actions' }, h('button', { class: 'icon-btn sm', title: 'Löschen', onclick: async () => { if (await confirmDialog('Regel löschen', `Regel «${r.match}» löschen?`, 'Löschen', true)) saveSettings({ rules: rules.filter((x) => x !== r) }); } }, '✕'))
         ))))
       : h('p', { class: 'empty' }, 'Noch keine Regeln.')
   );
@@ -94,7 +94,7 @@ function profilesCard() {
   return h('section', { class: 'card' },
     h('h2', null, 'Import-Profile'),
     h('ul', { class: 'plain-list' }, profiles.map((p) => h('li', null, h('span', null, p.name, h('small', { class: 'muted' }, ' · ' + p.account)),
-      h('button', { class: 'icon-btn sm', title: 'Löschen', onclick: () => saveSettings({ importProfiles: profiles.filter((x) => x !== p) }) }, '✕'))))
+      h('button', { class: 'icon-btn sm', title: 'Löschen', onclick: async () => { if (await confirmDialog('Import-Profil löschen', `Profil «${p.name}» löschen?`, 'Löschen', true)) saveSettings({ importProfiles: profiles.filter((x) => x !== p) }); } }, '✕'))))
   );
 }
 

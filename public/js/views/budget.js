@@ -156,7 +156,12 @@ function lineRow(l, i, lines, rebuild, opts) {
     noSavingCol(opts) ? null : h('td', { class: 'center' }, isSub() ? null : h('input', { type: 'checkbox', checked: !!l.saving, 'aria-label': 'Sparen', title: 'Geht auf ein Sparkonto (z.B. Säule 3a)', onchange: (e) => { l.saving = e.target.checked; changed(); } })),
     h('td', { class: 'row-actions' },
       h('button', { class: 'icon-btn sm', title: 'Nach oben', disabled: i === 0, onclick: () => { [lines[i - 1], lines[i]] = [lines[i], lines[i - 1]]; rebuild(); changed(); } }, '↑'),
-      h('button', { class: 'icon-btn sm', title: 'Entfernen', onclick: () => { lines.splice(i, 1); rebuild(); changed(); } }, '✕')
+      h('button', { class: 'icon-btn sm', title: 'Entfernen', onclick: async () => {
+        const used = opts.pot ? state.data.transactions.filter((t) => t.pot === opts.pot.key && t.cat === l.name && t.date.startsWith(draftYear + '-')).length : 0;
+        const msg = `«${l.name || 'Posten ohne Namen'}» entfernen?` + (used ? ` ${used} Buchungen ${draftYear} haben diese Kategorie; sie bleiben erhalten und erscheinen danach als «nicht im Budget».` : '');
+        if (!(await confirmDialog(opts.income ? 'Einkommen entfernen' : 'Posten entfernen', msg, 'Entfernen', true))) return;
+        lines.splice(lines.indexOf(l), 1); rebuild(); changed();
+      } }, '✕')
     )
   );
 }
