@@ -1,5 +1,7 @@
 # Kässeli
 
+[![Tests](https://github.com/chfelser-hash/kaesseli/actions/workflows/tests.yml/badge.svg)](https://github.com/chfelser-hash/kaesseli/actions/workflows/tests.yml)
+
 Haushaltsbudget als Web-App – Nachfolger der Excel-Datei.
 Läuft im Browser auf Windows und Android (installierbar als App), die Daten liegen auf der eigenen Synology NAS.
 
@@ -109,4 +111,18 @@ Beim ersten Import einer neuen Bank die erkannten Spalten prüfen und **Als Prof
 | Oberfläche | `public/` – HTML/CSS/JavaScript-Module, PWA mit Service Worker |
 | Daten | `data/budget.json`, `data/users.json`, `data/backups/` |
 | Konfiguration | `PORT` (8080), `DATA_DIR` (./data), `COOKIE_SECURE` |
-| Tests | `npm test` |
+| Tests | `npm test` (Logik + Server), `npm run test:e2e` (Browser, benötigt `playwright`) |
+
+## Automatische Tests (GitHub Actions)
+
+Bei jedem Push prüft GitHub die App automatisch (`.github/workflows/tests.yml`). Das Ergebnis zeigt das Abzeichen oben bzw. der Reiter **Actions** im Repo.
+
+| Prüfung | Was getestet wird |
+|---|---|
+| Rechenlogik & Server (Node 20 und 22) | Budget- und Spar-Rechnung, Monitoring, Unterkategorien, Abrechnungszyklen, CSV/Viseca-Import; Server: Anmeldung, Schutz ohne Login, Sperre nach Fehlversuchen, Buchungen, Budget, Abrechnungen, Sicherung/Wiederherstellung, Neustart, frische Installation |
+| Oberfläche im Browser | Alle Tabs ohne JavaScript-Fehler, Budget speichern, Ausgabe erfassen, Rückfrage beim Löschen, Dialoge, «Jetzt abrechnen», Kreditkarten-Text importieren inkl. Duplikaterkennung, Übersicht, Handy-Ansicht ohne seitliches Scrollen, Abmelden |
+| Docker-Image | Image bauen und wie auf der DS218+ mit leerem Datenordner starten |
+
+Alle Tests arbeiten mit erfundenen Daten und einem leeren, temporären Datenordner – persönliche Daten kommen nie ins Repo oder in die Tests.
+
+Lokal: `npm test` sowie `npm run test:e2e` (vorher einmal `npm install --no-save playwright` und `npx playwright install chromium`).

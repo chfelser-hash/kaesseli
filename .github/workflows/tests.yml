@@ -1,0 +1,63 @@
+name: Tests
+
+# Läuft bei jedem Push und Pull Request sowie manuell («Run workflow»).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  logik-und-server:
+    name: Rechenlogik & Server (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Unit- und API-Tests
+        run: npm test
+
+  browser:
+    name: Oberfläche im Browser (Desktop & Handy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright mit Chromium installieren
+        run: |
+          npm install --no-save --no-package-lock playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Browser-Tests
+        run: npm run test:e2e
+
+  docker:
+    name: Docker-Image (wie auf der DS218+)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image bauen und mit leerem Datenordner starten
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/api/status; then echo; break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/api/status | grep -q '"needsSetup":true'
+          curl -fsS http://localhost:8080/ | grep -q '<title>Kässeli</title>'
+          test -f data/budget.json
+      - name: Container-Log bei Fehler
+        if: failure()
+        run: docker compose logs
+      - name: Aufräumen
+        if: always()
+        run: docker compose down
