@@ -1,0 +1,21 @@
+{
+  "name": "Haushaltsbudget",
+  "short_name": "Budget",
+  "description": "Ausgaben erfassen und Budget überwachen",
+  "lang": "de-CH",
+  "start_url": "/#erfassen",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f5f1",
+  "theme_color": "#1f4f8a",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "Ausgabe erfassen", "url": "/#erfassen" },
+    { "name": "Übersicht", "url": "/#uebersicht" }
+  ]
+}

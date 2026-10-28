@@ -1,0 +1,190 @@
+// Berechnungen: Ausdrücke, Budgetsummen, Monitoring (Budget vs. Ist pro Monat)
+
+export const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+export const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
+export const FREQS = [
+  { v: 12, label: 'monatlich' },
+  { v: 13, label: '13× (Lohn)' },
+  { v: 1, label: 'jährlich' },
+  { v: 2, label: 'halbjährlich' },
+  { v: 4, label: 'quartalsweise' },
+];
+
+/**
+ * Wertet einfache Rechenausdrücke sicher aus: 1500+120, 2*7000, (21.4+43.6), 12,50
+ * Erlaubt sind Zahlen, + - * / und Klammern. Tausendertrennzeichen (') werden ignoriert.
+ */
+export function evalExpr(input) {
+  if (typeof input === 'number') return input;
+  let s = String(input ?? '').trim().replace(/['’\s]/g, '').replace(/^=/, '');
+  if (!s) return 0;
+  s = s.replace(/(\d),(\d)/g, '$1.$2');
+  let i = 0;
+  const peek = () => s[i];
+  const num = () => {
+    const m = /^\d*\.?\d+|^\d+\.?/.exec(s.slice(i));
+    if (!m) throw new Error('Zahl erwartet');
+    i += m[0].length;
+    return parseFloat(m[0]);
+  };
+  const factor = () => {
+    if (peek() === '-') { i++; return -factor(); }
+    if (peek() === '+') { i++; return factor(); }
+    if (peek() === '(') {
+      i++;
+      const v = expr();
+      if (peek() !== ')') throw new Error(') erwartet');
+      i++;
+      return v;
+    }
+    return num();
+  };
+  const term = () => {
+    let v = factor();
+    while (peek() === '*' || peek() === '/') {
+      const op = s[i++];
+      const r = factor();
+      v = op === '*' ? v * r : v / r;
+    }
+    return v;
+  };
+  const expr = () => {
+    let v = term();
+    while (peek() === '+' || peek() === '-') {
+      const op = s[i++];
+      const r = term();
+      v = op === '+' ? v + r : v - r;
+    }
+    return v;
+  };
+  try {
+    const v = expr();
+    if (i !== s.length || !Number.isFinite(v)) return NaN;
+    return v;
+  } catch {
+    return NaN;
+  }
+}
+
+const n = (v) => (Number.isFinite(v) ? v : 0);
+export const lineValue = (l) => n(evalExpr(l.expr));
+export const lineMonthly = (l) => (lineValue(l) * (Number(l.freq) || 12)) / 12;
+export const lineYearly = (l) => lineValue(l) * (Number(l.freq) || 12);
+export const potMonthly = (p) => p.lines.reduce((a, l) => a + lineMonthly(l), 0);
+export const potYearly = (p) => p.lines.reduce((a, l) => a + lineYearly(l), 0);
+
+export function budgetSummary(y) {
+  const incomeMonthly = y.income.reduce((a, l) => a + lineMonthly(l), 0);
+  const incomeYearly = y.income.reduce((a, l) => a + lineYearly(l), 0);
+  // "ohne 13." = nur die regulären 12 Zahlungen eines Monatslohns
+  const incomeNo13 = y.income.reduce((a, l) => a + (lineValue(l) * Math.min(Number(l.freq) || 12, 12)) / 12, 0);
+  const pots = y.pots.map((p) => ({ key: p.key, name: p.name, color: p.color, monthly: potMonthly(p), yearly: potYearly(p) }));
+  const totalMonthly = pots.reduce((a, p) => a + p.monthly, 0);
+  const totalYearly = pots.reduce((a, p) => a + p.yearly, 0);
+  return {
+    incomeMonthly, incomeYearly, incomeNo13, pots, totalMonthly, totalYearly,
+    rest: incomeMonthly - totalMonthly,
+    restYearly: incomeYearly - totalYearly,
+    restNo13: incomeNo13 - totalMonthly,
+  };
+}
+
+// ---------- Datum ----------
+export function todayStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export const ym = (date) => date.slice(0, 7);
+export const shiftMonth = (ymStr, delta) => {
+  let [y, m] = ymStr.split('-').map(Number);
+  m += delta;
+  while (m < 1) { m += 12; y--; }
+  while (m > 12) { m -= 12; y++; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+};
+export const fmtDate = (s) => (s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : '');
+export const fmtDateShort = (s) => (s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.` : '');
+
+// ---------- Zahlenformat ----------
+const f2 = new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const f0 = new Intl.NumberFormat('de-CH', { maximumFractionDigits: 0 });
+export const fmt = (v) => f2.format(n(v));
+export const fmt0 = (v) => f0.format(Math.round(n(v)));
+export const fmtSigned = (v) => (v > 0.005 ? '+' : '') + fmt0(v);
+
+/**
+ * Monitoring eines Topfs für ein Jahr.
+ * Für Ausgabentöpfe ist die Differenz Budget − Ist (positiv = unter Budget).
+ * Für Spartöpfe ist die Differenz Eingezahlt − Ziel (positiv = mehr gespart).
+ * "geplant" sind Buchungen mit Datum in der Zukunft.
+ */
+export function monitorPot(pot, year, transactions, today = todayStr()) {
+  const budget = potMonthly(pot);
+  const saving = pot.kind === 'saving';
+  const curYear = Number(today.slice(0, 4));
+  const curMonth = Number(today.slice(5, 7));
+  // Bis zu welchem Monat gilt das Jahr als "gelaufen"?
+  const lastRealized = year < curYear ? 12 : year > curYear ? 0 : curMonth;
+  const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, budget, actual: 0, planned: 0, diff: 0, cum: 0, realized: i + 1 <= lastRealized }));
+  const byCat = new Map();
+  for (const t of transactions) {
+    if (t.pot !== pot.key || !t.date.startsWith(year + '-')) continue;
+    const m = months[Number(t.date.slice(5, 7)) - 1];
+    const planned = t.date > today;
+    if (planned) m.planned += t.amount;
+    else m.actual += t.amount;
+    const c = byCat.get(t.cat || '') || { actual: 0, planned: 0, count: 0 };
+    if (planned) c.planned += t.amount;
+    else c.actual += t.amount;
+    c.count++;
+    byCat.set(t.cat || '', c);
+  }
+  let cum = 0;
+  for (const m of months) {
+    if (m.realized) {
+      m.diff = saving ? m.actual - budget : budget - m.actual;
+      cum += m.diff;
+      m.cum = cum;
+    } else {
+      m.diff = null;
+      m.cum = null;
+    }
+  }
+  const actualTotal = months.reduce((a, m) => a + m.actual, 0);
+  const plannedTotal = months.reduce((a, m) => a + m.planned, 0);
+  const budgetToDate = budget * lastRealized;
+  const yearly = potYearly(pot);
+  const carry = Number(pot.carryover) || 0;
+  return {
+    pot, months, byCat, budget, yearly, saving, lastRealized,
+    actualTotal, plannedTotal,
+    cumDiff: lastRealized ? months[lastRealized - 1].cum : 0,
+    // Kontostand des Topfs: Übertrag + einbezahltes Budget − Ausgaben (bei Sparen: Übertrag + Einzahlungen)
+    balance: saving ? carry + actualTotal : carry + budgetToDate - actualTotal,
+    forecast: saving ? carry + actualTotal + plannedTotal : carry + yearly - actualTotal - plannedTotal,
+    remainingYear: saving ? yearly - actualTotal - plannedTotal : yearly - actualTotal - plannedTotal,
+  };
+}
+
+/** Kategorie-Auswertung: Budget pro Zeile vs. Ist */
+export function categoryBreakdown(mon) {
+  const rows = mon.pot.lines.map((l) => {
+    const c = mon.byCat.get(l.name) || { actual: 0, planned: 0, count: 0 };
+    return { name: l.name, yearly: lineYearly(l), actual: c.actual, planned: c.planned, count: c.count };
+  });
+  const known = new Set(mon.pot.lines.map((l) => l.name));
+  for (const [cat, c] of mon.byCat) {
+    if (!known.has(cat)) rows.push({ name: cat || 'Ohne Kategorie', yearly: 0, actual: c.actual, planned: c.planned, count: c.count, unbudgeted: true });
+  }
+  return rows;
+}
+
+/** Einfacher Hash für Duplikat-Erkennung beim Import */
+export function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}

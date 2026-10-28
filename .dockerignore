@@ -1,0 +1,7 @@
+data
+node_modules
+.git
+*.xlsx
+*.csv
+budget-import*.json
+budget-backup*.json
