@@ -136,3 +136,26 @@ Der Devisenkurs ist provisorisch.`;
     ['2026-10-24', 'onlineshop.example', 50],
   ]);
 });
+
+test('Eingefügter Text: Viseca ohne Punkte vor der Karte, mit TRX-Nummern', () => {
+  const today = new Date(2026, 9, 28);
+  const txt = `Alle KartenVisa **** 1111 CHF Anna MusterVisa **** 2222 CHF Beat Muster
+Oktober
+1111ANNA MUSTER
+TRX2026102600001234567
+Laden Gamma
+TRX2026102600001234567
+24.10.2026 13:52 Musterdorf
+TRX2026102600001234567
+7.30  CHF
+2222
+BEAT MUSTER
+Laden Delta
+23.10.2026 19:25
+19.80  CHF`;
+  const r = parsePastedText(txt, today);
+  assert.deepEqual(r.map((x) => [x.date, x.text, x.amount]), [
+    ['2026-10-24', 'Laden Gamma, Musterdorf', 7.3],
+    ['2026-10-23', 'Laden Delta', 19.8],
+  ]);
+});

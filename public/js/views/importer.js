@@ -67,14 +67,17 @@ async function pasteDialog() {
   const ta = h('textarea', {
     rows: 12, class: 'paste-area',
     placeholder: 'Hier einfügen (Strg+V) …\n\nViseca One: Transaktionen öffnen, nach unten scrollen bis der gewünschte Zeitraum geladen ist, dann die Liste mit der Maus markieren (oder Strg+A) und kopieren (Strg+C).',
-    oninput: (e) => { text = e.target.value; info.textContent = preview(text); },
+    oninput: (e) => { text = e.target.value; info.textContent = preview(text); showSample(); },
   });
   const info = h('p', { class: 'hint' });
+  const sample = h('ul', { class: 'paste-sample' });
+  const showSample = () => sample.replaceChildren(...parsePastedText(text).slice(0, 5).map((r) =>
+    h('li', null, h('span', { class: 'muted' }, fmtDate(r.date)), h('span', null, r.text || '–'), h('span', { class: 'num' }, fmt(r.amount)))));
   const preview = (t) => {
     const r = parsePastedText(t);
     return t.trim() ? (r.length ? `${r.length} Transaktionen erkannt · Total CHF ${fmt(r.reduce((a, x) => a + x.amount, 0))}` : 'Noch keine Transaktionen erkannt (Datum und CHF-Betrag nötig).') : '';
   };
-  const ok = await modal('Transaktionen einfügen', h('div', null, ta, info,
+  const ok = await modal('Transaktionen einfügen', h('div', null, ta, info, sample,
     h('p', { class: 'hint' }, 'Erkannt werden Datum (auch Überschriften wie «22. Oktober 2026»), Händler und CHF-Betrag. Kontostand, Limite und Totale werden übersprungen.')), [
     { label: 'Abbrechen', value: false },
     { label: 'Weiter', primary: true, onClick: () => { if (!parsePastedText(text).length) { toast('Keine Transaktionen erkannt', { error: true }); return false; } return true; } },

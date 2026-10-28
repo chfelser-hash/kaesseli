@@ -246,24 +246,39 @@ export function parsePastedText(text, today = new Date()) {
   const out = [];
   let curDate = null;
   let buffer = []; // Textzeilen seit der letzten Transaktion (Händler, Kategorie …)
+  let merchant = ''; // Zeile direkt vor einer Datumszeile (Viseca: Händler)
   let place = ''; // Ort aus der Datumszeile («26.10.2026 18:11 Musterdorf»)
-  const reset = () => { buffer = []; place = ''; };
+  const reset = () => { buffer = []; merchant = ''; place = ''; };
+
+  // Karteninhaber aus der Kopfzeile («Visa **** 1234 CHF Vorname Name») – diese Zeilen sind kein Händler
+  const holders = new Set();
+  for (const m of text.matchAll(/\*{2,}\s*\d{4}\s*CHF\s*([A-Za-zÄÖÜäöüéè' -]+?)(?=Visa|Master|$|\n)/g)) holders.add(m[1].trim().toUpperCase());
+  const isCardLine = (l) => {
+    if (/[•*●·]{2,}\s*\d{4}/.test(l)) return true;
+    if (/^\d{4}\s*[A-ZÄÖÜ][A-ZÄÖÜÉÈ' .-]+$/.test(l)) return true; // «1234VORNAME NAME»
+    const u = l.replace(/^\d{4}\s*/, '').toUpperCase();
+    return holders.has(u);
+  };
+  // Transaktionsnummern, Links und ähnliche technische Zeilen
+  const isIdLine = (l) => /^https?:\/\//i.test(l) || (!/\s/.test(l) && /\d{8,}/.test(l)) || /\/detail\//.test(l);
+
   for (const raw of text.split(/\r?\n/)) {
     let line = raw
       .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // Markdown-Links [Text](url) → Text
       .replace(/^\s*[*\-•]\s+/, '') // Aufzählungszeichen
       .replace(/\t+/g, '  ')
       .trim();
-    if (!line) continue;
-    // Kartenzeile «••••1234 NAME» beginnt eine neue Transaktion
-    if (/^[•*●·]{3,}\s*\d{4}/.test(line)) { reset(); continue; }
+    if (!line || isIdLine(line)) continue;
+    // Kartenzeile beginnt eine neue Transaktion
+    if (isCardLine(line)) { reset(); continue; }
     if (NOISE.test(line)) { reset(); continue; }
     const d = findDateInLine(line, today);
     if (d) {
       curDate = d.date;
+      if (buffer.length) merchant = buffer[buffer.length - 1];
       line = d.rest.replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, ' ').trim();
       if (!findAmountInLine(line)) {
-        // Rest der Datumszeile ist der Ort; der Händler steht davor im Puffer
+        // Rest der Datumszeile ist der Ort; der Händler steht davor
         if (hasLetters(line) && !STATUS.test(clean(line))) place = clean(line);
         continue;
       }
@@ -274,7 +289,7 @@ export function parsePastedText(text, today = new Date()) {
     if (a) {
       if (!curDate) { reset(); continue; }
       let label = clean(a.rest);
-      if (!hasLetters(label) || STATUS.test(label)) label = buffer.slice(0, 2).join(' – ');
+      if (!hasLetters(label) || STATUS.test(label)) label = merchant || buffer.slice(0, 2).join(' – ');
       if (place && !label.toLowerCase().includes(place.toLowerCase())) label = label ? `${label}, ${place}` : place;
       const credit = a.credit || CREDIT.test(label);
       out.push({ date: curDate, text: label, amount: credit ? -a.value : a.value });
