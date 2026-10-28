@@ -6,6 +6,7 @@ Läuft im Browser auf Windows und Android (installierbar als App), die Daten lie
 - **Erfassen** – Ausgaben in Sekunden eintragen: Betrag, Topf, Kategorie, Zahlungsmittel. Beträge dürfen gerechnet werden (`1500+120`). Sammelerfassung für ganze Kreditkartenabrechnungen (ein Betrag pro Zeile). Bekannte Notizen füllen Topf und Kategorie automatisch aus.
 - **Übersicht** – Monitoring wie bisher: Budget vs. Ist pro Monat, Differenz und kumulierte Differenz, Saldo und Prognose pro Topf, Auswertung nach Kategorie, geplante Ausgaben.
 - **Budget** – Jahresbudget bearbeiten (Einkommen, Töpfe, Posten, monatlich/jährlich/13×). «Neues Jahr» kopiert das Budget und übernimmt Salden als Übertrag.
+- **Abrechnung** – Knopf «Jetzt abrechnen» speichert den Zeitpunkt der Monatsabrechnung (Datum + Uhrzeit). Die Ansicht «Abrechnung» zeigt alles seit der letzten Abrechnung oder frühere Zyklen; der Import übernimmt auf Wunsch nur Buchungen zwischen der vorherigen und der letzten Abrechnung (mit Uhrzeit, wo vorhanden).
 - **Import** – CSV-Auszüge (PostFinance, Kreditkarte) einlesen, Spalten werden erkannt, Regeln ordnen wiederkehrende Händler automatisch zu, Duplikate werden erkannt.
 - **Mehr** – Zahlungsmittel, Regeln, Benutzer, Sicherung.
 
@@ -85,7 +86,15 @@ Neue Version ins Verzeichnis kopieren bzw. `git pull`, dann im Container Manager
 
 Tab **Budget → + Neues Jahr**: Vorlage wählen (z.B. Budget 2026 kopieren). Die App schlägt als Übertrag den prognostizierten Saldo Ende Jahr pro Topf vor (z.B. Ferienkonto) – anpassbar. Danach Beträge im neuen Jahr anpassen; Buchungen mit Datum im neuen Jahr (z.B. bereits geplante Ferien) werden automatisch dem neuen Jahr zugerechnet.
 
-## 6. Import von Kontoauszügen
+## 6. Monatsabrechnung – Ablauf
+
+1. Tab **Erfassen** → **Abrechnung** → **Jetzt abrechnen** (Zeitpunkt ist vorausgefüllt, anpassbar).
+2. Tab **Import**: Kreditkarte (Text einfügen) und Postkonto (CSV) einlesen. Voreinstellung «Nur bis zur letzten Abrechnung»: Buchungen ausserhalb des Zyklus sind abgewählt und markiert.
+3. Tab **Erfassen** → **Abrechnung**: Der eben abgeschlossene Zyklus ist ausgewählt, inkl. Auswertung nach Zahlungsmittel.
+
+Frühere Abrechnungszeitpunkte lassen sich unter **Mehr → Abrechnungen** nachtragen oder löschen. Der Excel-Import übernimmt die Zeitpunkte aus dem Monitoring.
+
+## 7. Import von Kontoauszügen
 
 - **PostFinance:** E-Finance → Konto → Bewegungen → Export «CSV».
 - **Kreditkarte (Viseca One / Migros Cumulus):** Viseca One bietet keinen Export der aktuellen Transaktionen. Stattdessen auf <https://one.viseca.ch> → Transaktionen bis zum gewünschten Datum nach unten scrollen, die Liste markieren (oder Strg+A), kopieren (Strg+C) und in Kässeli unter **Import → Text einfügen …** einfügen. Datum, Händler und CHF-Betrag werden erkannt, Fremdwährungsbeträge, Kontostand und Limite übersprungen, Zahlungen an die Karte als Gutschrift erkannt (standardmässig ignoriert). Bereits übernommene Transaktionen werden beim nächsten Einfügen als Duplikat markiert – man kann also immer die ganze Liste einfügen.

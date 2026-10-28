@@ -1,10 +1,13 @@
 // Tab «Mehr»: Konten, Regeln, Benutzer, Sicherung
 import { h, toast, modal, confirmDialog } from '../ui.js';
 import { state, api, render, reload, currentYear } from '../app.js';
+import { fmtStamp } from '../calc.js';
+import { settleNow } from './erfassen.js';
 
 export function renderEinstellungen() {
   return h('div', { class: 'view settings' },
     h('div', { class: 'settings-grid' },
+      settlementsCard(),
       accountsCard(),
       rulesCard(),
       usersCard(),
@@ -22,6 +25,25 @@ async function saveSettings(patch) {
   } catch (e) {
     toast(e.message, { error: true });
   }
+}
+
+function settlementsCard() {
+  const list = [...state.data.settlements].sort((a, b) => b.at.localeCompare(a.at));
+  return h('section', { class: 'card' },
+    h('h2', null, 'Abrechnungen'),
+    h('p', { class: 'hint' }, 'Zeitpunkte von «Jetzt abrechnen». Sie begrenzen den Import und die Ansicht «Abrechnung». Frühere Zeitpunkte kannst du hier nachtragen.'),
+    list.length
+      ? h('ul', { class: 'plain-list' }, list.slice(0, 24).map((x) => h('li', null,
+        h('span', null, fmtStamp(x.at), h('small', { class: 'muted' }, [x.note, x.by].filter(Boolean).map((v) => ' · ' + v).join(''))),
+        h('button', { class: 'icon-btn sm', title: 'Löschen', onclick: async () => {
+          if (!(await confirmDialog('Abrechnung löschen?', `Abrechnung vom ${fmtStamp(x.at)} löschen? Buchungen bleiben erhalten.`, 'Löschen', true))) return;
+          await api('DELETE', '/api/settlements/' + x.id);
+          state.data.settlements = state.data.settlements.filter((y) => y.id !== x.id);
+          render();
+        } }, '✕'))))
+      : h('p', { class: 'empty' }, 'Noch keine Abrechnung gespeichert.'),
+    h('div', { class: 'row gap' }, h('button', { class: 'btn', onclick: settleNow }, '+ Abrechnung erfassen / nachtragen'))
+  );
 }
 
 function accountsCard() {

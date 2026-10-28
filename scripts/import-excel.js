@@ -111,6 +111,7 @@ const years = { [year]: { year, income, pots: potList } };
 
 // ---------- 2. Buchungen ----------
 const transactions = [];
+const settlements = [];
 const addTx = (t) => transactions.push({ id: id(), cat: '', account: '', src: 'excel', by: 'Excel-Import', createdAt: new Date().toISOString(), ...t, amount: round2(t.amount) });
 
 /** Liest Datum aus Bezeichnungen wie «Arzt (27.04)» oder «Energie (programmiert 07.04)» */
@@ -214,6 +215,16 @@ if (M) {
     }
     return n;
   };
+  // Abrechnungszeitpunkte (Zeile über «Bezug» im Haushalt-Monitoring, z.B. «20.10.26 - 08:15»)
+  if (hhBezug > 2) {
+    for (let c = 2; c <= 13; c++) {
+      const m = String(M.value(colName(c) + (hhBezug - 2)) || '').match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})\D+(\d{1,2}):(\d{2})/);
+      if (!m) continue;
+      const y = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
+      settlements.push({ id: id(), at: `${y}-${pad(m[2])}-${pad(m[1])}T${pad(m[4])}:${m[5]}`, note: 'aus Excel', by: 'Excel-Import', createdAt: new Date().toISOString() });
+    }
+    counts.abrechnungen = settlements.length;
+  }
   counts.steuern = simpleRow(/^steuern$/i, 'effektiv', 'steuern', 'Steuerzahlung (aus Excel)');
   counts.sparen = simpleRow(/^sparen$/i, 'eingezahlt', 'sparen', 'Einzahlung Sparkonto (aus Excel)');
 
@@ -234,7 +245,7 @@ if (M) {
 
 // ---------- 3. Ausgabe ----------
 const settings = { accounts: ['Kreditkarte', 'Postkonto', 'Bar'], rules: [], importProfiles: [] };
-const result = { schema: 1, exportedAt: new Date().toISOString(), source: path.basename(file), years, transactions, settings };
+const result = { schema: 1, exportedAt: new Date().toISOString(), source: path.basename(file), years, transactions, settlements, settings };
 fs.writeFileSync(out, JSON.stringify(result, null, 1));
 
 console.log(`\nBudget ${year} übernommen: ${income.length} Einkommenszeilen, ${potList.length} Töpfe`);

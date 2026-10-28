@@ -2,7 +2,7 @@
 import { h, toast, modal } from '../ui.js';
 import { state, api, render, yearForDate } from '../app.js';
 import { readFileText, parseCsv, guessMapping, applyMapping, parsePastedText } from '../csv.js';
-import { fmt, fmtDate, hashStr } from '../calc.js';
+import { fmt, fmtDate, hashStr, cycleList, inPeriod, fmtStamp } from '../calc.js';
 
 const IGNORE = '__ignore';
 let imp = null; // { fileName, rows, map, account, profileId, items }
@@ -58,8 +58,30 @@ function fileCard() {
     ),
     imp ? h('div', { class: 'field' }, h('span', { class: 'label' }, 'Konto dieses Auszugs'),
       h('select', { onchange: (e) => { imp.account = e.target.value; recalcItems(); render(); } },
-        accounts.map((a) => h('option', { value: a, selected: a === imp.account }, a)))) : null
+        accounts.map((a) => h('option', { value: a, selected: a === imp.account }, a)))) : null,
+    imp ? periodField() : null
   );
+}
+
+// ---------- Abrechnungszyklus ----------
+function periodBounds(period) {
+  const cyc = cycleList(state.data.settlements);
+  if (period === 'last' && cyc.closed[0]) return { from: cyc.closed[0].from, to: cyc.closed[0].to };
+  if (period === 'open') return { from: cyc.last?.at || null, to: null };
+  return null; // alle
+}
+const defaultPeriod = () => (state.data.settlements.length ? 'last' : 'all');
+
+function periodField() {
+  const cyc = cycleList(state.data.settlements);
+  const last = cyc.closed[0];
+  return h('div', { class: 'field' }, h('span', { class: 'label' }, 'Welche Buchungen berücksichtigen?'),
+    h('select', { onchange: (e) => { imp.period = e.target.value; recalcItems(); render(); } },
+      last ? h('option', { value: 'last', selected: imp.period === 'last' },
+        `Nur bis zur letzten Abrechnung: ${last.from ? fmtStamp(last.from) : 'Beginn'} – ${fmtStamp(last.to)}`) : null,
+      cyc.last ? h('option', { value: 'open', selected: imp.period === 'open' }, `Nur seit der letzten Abrechnung (${fmtStamp(cyc.last.at)}) bis jetzt`) : null,
+      h('option', { value: 'all', selected: imp.period === 'all' }, 'Alle Buchungen der Datei')),
+    !last ? h('p', { class: 'hint' }, 'Tipp: Im Tab Erfassen zuerst «Jetzt abrechnen» drücken – dann werden nur die Buchungen seit der vorherigen Abrechnung übernommen.') : null);
 }
 
 async function pasteDialog() {
@@ -72,7 +94,7 @@ async function pasteDialog() {
   const info = h('p', { class: 'hint' });
   const sample = h('ul', { class: 'paste-sample' });
   const showSample = () => sample.replaceChildren(...parsePastedText(text).slice(0, 5).map((r) =>
-    h('li', null, h('span', { class: 'muted' }, fmtDate(r.date)), h('span', null, r.text || '–'), h('span', { class: 'num' }, fmt(r.amount)))));
+    h('li', null, h('span', { class: 'muted' }, fmtDate(r.date) + (r.time ? ' ' + r.time : '')), h('span', null, r.text || '–'), h('span', { class: 'num' }, fmt(r.amount)))));
   const preview = (t) => {
     const r = parsePastedText(t);
     return t.trim() ? (r.length ? `${r.length} Transaktionen erkannt · Total CHF ${fmt(r.reduce((a, x) => a + x.amount, 0))}` : 'Noch keine Transaktionen erkannt (Datum und CHF-Betrag nötig).') : '';
@@ -85,7 +107,7 @@ async function pasteDialog() {
   if (!ok) return;
   const accounts = state.data.settings.accounts;
   const account = accounts.find((a) => /kredit|visa|master|cumulus|viseca/i.test(a)) || accounts[0] || '';
-  imp = { kind: 'text', fileName: 'Eingefügter Text', text, account, items: [] };
+  imp = { kind: 'text', fileName: 'Eingefügter Text', text, account, period: defaultPeriod(), items: [] };
   state.busy = true;
   recalcItems();
   render();
@@ -101,7 +123,7 @@ function startImport(fileName, rows) {
     account = profile.account || account;
     toast(`Profil «${profile.name}» erkannt`);
   }
-  imp = { fileName, rows, map, account, profileId: profile?.id || null, items: [] };
+  imp = { fileName, rows, map, account, period: defaultPeriod(), profileId: profile?.id || null, items: [] };
   state.busy = true;
   recalcItems();
   render();
@@ -112,11 +134,13 @@ function recalcItems() {
   const existingSrc = new Set(state.data.transactions.map((t) => t.src).filter(Boolean));
   const byDateAmt = new Set(state.data.transactions.map((t) => `${t.date}|${t.amount.toFixed(2)}`));
   const rules = state.data.settings.rules;
+  const bounds = periodBounds(imp.period);
   imp.items = parsed.map((r) => {
     const src = 'imp:' + hashStr(`${imp.account}|${r.date}|${r.amount}|${r.text}`);
     const rule = rules.find((ru) => r.text.toLowerCase().includes(ru.match.toLowerCase()));
     let status = '';
     if (existingSrc.has(src)) status = 'dup';
+    else if (bounds && !inPeriod(r, bounds.from, bounds.to, true)) status = 'out';
     else if (byDateAmt.has(`${r.date}|${r.amount.toFixed(2)}`)) status = 'maybe';
     const pot = rule ? rule.pot : r.amount < 0 ? IGNORE : '';
     return { ...r, src, status, rule: rule?.match || '', pot, cat: rule?.cat || '', include: status === '' && pot !== IGNORE };
@@ -138,6 +162,7 @@ function mappingCard() {
     h('div', { class: 'form-grid' },
       h('label', null, 'Kopfzeile ist Zeile', h('input', { type: 'number', min: 0, value: m.header + 1, onchange: (e) => { m.header = Number(e.target.value) - 1; recalcItems(); render(); } })),
       h('label', null, 'Datum', colSel('date')),
+      h('label', null, 'Uhrzeit (falls separat)', colSel('time', true)),
       h('label', null, 'Text', colSel('text')),
       h('label', null, 'Zusatztext', colSel('text2', true)),
       h('label', null, 'Beträge', h('select', { onchange: (e) => { m.mode = e.target.value; recalcItems(); render(); } },
@@ -191,6 +216,7 @@ function previewCard() {
   const counts = {
     dup: items.filter((i) => i.status === 'dup').length,
     maybe: items.filter((i) => i.status === 'maybe').length,
+    out: items.filter((i) => i.status === 'out').length,
   };
   const anyDate = items[0]?.date || new Date().toISOString().slice(0, 10);
   let bulkPot = '';
@@ -200,7 +226,7 @@ function previewCard() {
       h('h2', null, 'Zuordnen'),
       h('span', { class: 'muted' }, `${sel.length} von ${items.length} ausgewählt · CHF ${fmt(sel.reduce((a, i) => a + i.amount, 0))}`)
     ),
-    counts.dup || counts.maybe ? h('p', { class: 'hint' }, [counts.dup ? `${counts.dup} bereits importiert` : null, counts.maybe ? `${counts.maybe} evtl. schon manuell erfasst (gleiches Datum und Betrag)` : null].filter(Boolean).join(' · ') + ' – diese sind abgewählt.') : null,
+    counts.dup || counts.maybe || counts.out ? h('p', { class: 'hint' }, [counts.out ? `${counts.out} ausserhalb des Abrechnungszyklus` : null, counts.dup ? `${counts.dup} bereits importiert` : null, counts.maybe ? `${counts.maybe} evtl. schon manuell erfasst (gleiches Datum und Betrag)` : null].filter(Boolean).join(' · ') + ' – diese sind abgewählt.') : null,
     h('div', { class: 'bulk-bar' },
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: sel.length === items.length, onchange: (e) => { items.forEach((i) => (i.include = e.target.checked)); render(); } }), ' alle'),
       h('select', { onchange: (e) => (bulkPot = e.target.value) },
@@ -225,13 +251,15 @@ function importRow(it) {
     h('div', { class: 'imp-info' },
       h('span', { class: 'imp-text', title: it.text }, it.text || '–'),
       h('span', { class: 'imp-meta' }, fmtDate(it.date),
+        it.time ? h('span', null, it.time) : null,
         it.status === 'dup' ? h('b', { class: 'tag' }, 'schon importiert') : null,
+        it.status === 'out' ? h('b', { class: 'tag' }, 'ausserhalb Zyklus') : null,
         it.status === 'maybe' ? h('b', { class: 'tag' }, 'evtl. doppelt') : null,
         it.rule ? h('b', { class: 'tag rule' }, 'Regel: ' + it.rule) : null)
     ),
     h('span', { class: 'imp-amt' + (it.amount < 0 ? ' neg' : '') }, fmt(it.amount)),
     h('div', { class: 'imp-assign' },
-      h('select', { 'aria-label': 'Topf', class: it.pot ? '' : 'empty', onchange: (e) => { it.pot = e.target.value; it.cat = ''; it.include = it.pot !== IGNORE && it.status !== 'dup'; render(); } },
+      h('select', { 'aria-label': 'Topf', class: it.pot ? '' : 'empty', onchange: (e) => { it.pot = e.target.value; it.cat = ''; it.include = it.pot !== IGNORE && it.status !== 'dup' && it.status !== 'out'; render(); } },
         h('option', { value: '', selected: !it.pot }, 'Topf wählen …'),
         pots.map((p) => h('option', { value: p.key, selected: p.key === it.pot }, p.name)),
         h('option', { value: IGNORE, selected: it.pot === IGNORE }, '— ignorieren —')),
@@ -271,7 +299,7 @@ async function makeRule(it) {
 
 async function doImport() {
   const list = imp.items.filter((i) => i.include && i.pot && i.pot !== IGNORE).map((i) => ({
-    date: i.date, amount: i.amount, pot: i.pot, cat: i.cat, account: imp.account, note: i.text, src: i.src,
+    date: i.date, time: i.time || '', amount: i.amount, pot: i.pot, cat: i.cat, account: imp.account, note: i.text, src: i.src,
   }));
   try {
     const res = await api('POST', '/api/tx', list);

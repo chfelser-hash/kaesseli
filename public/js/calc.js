@@ -188,3 +188,39 @@ export function hashStr(s) {
   }
   return (h >>> 0).toString(36);
 }
+
+// ---------- Abrechnungszyklen ----------
+/** Aktueller Zeitpunkt als «YYYY-MM-DDTHH:MM» (lokale Zeit) */
+export function nowStamp(d = new Date()) {
+  return `${todayStr(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+export const nowTime = (d = new Date()) => nowStamp(d).slice(11);
+export const fmtStamp = (s) => (s ? `${fmtDate(s.slice(0, 10))} ${s.slice(11, 16)}` : '');
+
+/** Liste der Zyklen: abgeschlossene (von vorheriger bis zu dieser Abrechnung) + der offene seit der letzten */
+export function cycleList(settlements) {
+  const sorted = [...(settlements || [])].sort((a, b) => a.at.localeCompare(b.at));
+  const closed = sorted.map((s, i) => ({ id: s.id, from: sorted[i - 1]?.at || null, to: s.at, note: s.note || '' }));
+  return { closed: closed.reverse(), open: { id: 'open', from: sorted[sorted.length - 1]?.at || null, to: null }, last: sorted[sorted.length - 1] || null };
+}
+
+/**
+ * Liegt eine Buchung im Zeitraum (from, to] ? from/to sind «YYYY-MM-DDTHH:MM» oder null (offen).
+ * Buchungen ohne Uhrzeit am Starttag zählen nur mit inclFromDay (beim Import; Duplikate werden dort ohnehin erkannt).
+ */
+export function inPeriod(t, from, to, inclFromDay = false) {
+  if (from) {
+    const fd = from.slice(0, 10);
+    if (t.date < fd) return false;
+    if (t.date === fd) {
+      if (t.time) { if (`${t.date}T${t.time}` <= from) return false; }
+      else if (!inclFromDay) return false;
+    }
+  }
+  if (to) {
+    const td = to.slice(0, 10);
+    if (t.date > td) return false;
+    if (t.date === td && t.time && `${t.date}T${t.time}` > to) return false;
+  }
+  return true;
+}

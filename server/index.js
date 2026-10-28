@@ -94,6 +94,7 @@ function cleanTx(input, user, existing = {}) {
     cat: str(input.cat, 120),
     account: str(input.account, 80),
     note: str(input.note, 300),
+    time: /^\d{2}:\d{2}$/.test(input.time || '') ? input.time : '',
     src: input.src ? str(input.src, 200) : existing.src || '',
     by: existing.by || user.name,
     createdAt: existing.createdAt || new Date().toISOString(),
@@ -129,7 +130,7 @@ function cleanYear(y, year) {
 
 function publicData(user) {
   const d = store.data;
-  return { rev: d.rev, updatedAt: d.updatedAt, years: d.years, transactions: d.transactions, settings: d.settings, user, users: auth.listUsers() };
+  return { rev: d.rev, updatedAt: d.updatedAt, years: d.years, transactions: d.transactions, settlements: d.settlements, settings: d.settings, user, users: auth.listUsers() };
 }
 
 // ---------- API ----------
@@ -202,6 +203,24 @@ async function api(req, res, url) {
     store.mutate((d) => {
       d.transactions = d.transactions.filter((t) => !ids.has(t.id));
     });
+    return send(res, 200, { rev: store.rev });
+  }
+
+  // Abrechnungszeitpunkte («Jetzt abrechnen»)
+  if (p === '/api/settlements' && method === 'POST') {
+    const b = await readBody(req);
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(b.at || '')) throw httpError(400, 'Zeitpunkt ungültig');
+    const s = store.mutate((d) => {
+      if (d.settlements.some((x) => x.at === b.at)) throw httpError(400, 'Diese Abrechnung existiert bereits');
+      const item = { id: newId(), at: b.at, note: str(b.note, 200), by: user.name, createdAt: new Date().toISOString() };
+      d.settlements.push(item);
+      return item;
+    });
+    return send(res, 200, { rev: store.rev, settlement: s });
+  }
+  m = p.match(/^\/api\/settlements\/([\w-]+)$/);
+  if (m && method === 'DELETE') {
+    store.mutate((d) => { d.settlements = d.settlements.filter((x) => x.id !== m[1]); });
     return send(res, 200, { rev: store.rev });
   }
 
@@ -291,8 +310,8 @@ async function api(req, res, url) {
   // Sicherung
   if (p === '/api/backup' && method === 'GET') {
     const day = new Date().toISOString().slice(0, 10);
-    const { years, transactions, settings } = store.data;
-    return send(res, 200, JSON.stringify({ schema: 1, exportedAt: new Date().toISOString(), years, transactions, settings }, null, 1), {
+    const { years, transactions, settings, settlements } = store.data;
+    return send(res, 200, JSON.stringify({ schema: 1, exportedAt: new Date().toISOString(), years, transactions, settlements, settings }, null, 1), {
       'Content-Type': 'application/json; charset=utf-8',
       'Content-Disposition': `attachment; filename="budget-backup-${day}.json"`,
     });
@@ -300,7 +319,7 @@ async function api(req, res, url) {
   if (p === '/api/restore' && method === 'POST') {
     const b = await readBody(req);
     if (!b || typeof b.years !== 'object' || !Array.isArray(b.transactions)) throw httpError(400, 'Keine gültige Sicherungsdatei');
-    store.replaceAll({ years: b.years, transactions: b.transactions, settings: b.settings });
+    store.replaceAll({ years: b.years, transactions: b.transactions, settlements: b.settlements, settings: b.settings });
     return send(res, 200, { rev: store.rev });
   }
 

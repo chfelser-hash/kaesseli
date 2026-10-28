@@ -71,6 +71,12 @@ export function parseDate(s) {
   return null;
 }
 
+/** Uhrzeit «13:52» bzw. «7:05:12» aus einem Text → «HH:MM» oder '' */
+export function parseTime(s) {
+  const m = String(s || '').match(/\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
+  return m && Number(m[1]) < 24 ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
+}
+
 export function parseAmount(s) {
   s = String(s ?? '').trim().replace(/['’\s]|CHF/g, '');
   if (!s) return null;
@@ -114,6 +120,8 @@ export function guessMapping(rows) {
   const sample = rows.slice(header + 1, header + 20);
   let date = find(KEYS.date);
   if (date < 0 && sample.length) date = sample[0].findIndex((c) => parseDate(c));
+  let time = find(['uhrzeit', 'zeit', 'time']);
+  if (time === date) time = -1;
   const debit = find(KEYS.debit);
   const credit = find(KEYS.credit);
   let amount = debit < 0 ? find(KEYS.amount, [date]) : -1;
@@ -132,6 +140,7 @@ export function guessMapping(rows) {
   return {
     header,
     date,
+    time,
     text,
     text2: -1,
     mode: debit >= 0 ? 'split' : 'single',
@@ -162,7 +171,8 @@ export function applyMapping(rows, map) {
       amount = map.expenseNegative ? -v : v;
     }
     const text = [r[map.text], map.text2 >= 0 ? r[map.text2] : ''].filter(Boolean).join(' – ').replace(/\s+/g, ' ').trim();
-    out.push({ date, text, amount: Math.round(amount * 100) / 100, raw: r });
+    const time = parseTime(map.time >= 0 ? r[map.time] : '') || parseTime(r[map.date]);
+    out.push({ date, time, text, amount: Math.round(amount * 100) / 100, raw: r });
   }
   return out;
 }
@@ -245,6 +255,7 @@ const hasLetters = (s) => /[A-Za-zÄÖÜäöüéèà]{2,}/.test(s);
 export function parsePastedText(text, today = new Date()) {
   const out = [];
   let curDate = null;
+  let curTime = '';
   let buffer = []; // Textzeilen seit der letzten Transaktion (Händler, Kategorie …)
   let merchant = ''; // Zeile direkt vor einer Datumszeile (Viseca: Händler)
   let place = ''; // Ort aus der Datumszeile («26.10.2026 18:11 Musterdorf»)
@@ -275,6 +286,7 @@ export function parsePastedText(text, today = new Date()) {
     const d = findDateInLine(line, today);
     if (d) {
       curDate = d.date;
+      curTime = parseTime(d.rest);
       if (buffer.length) merchant = buffer[buffer.length - 1];
       line = d.rest.replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, ' ').trim();
       if (!findAmountInLine(line)) {
@@ -292,7 +304,7 @@ export function parsePastedText(text, today = new Date()) {
       if (!hasLetters(label) || STATUS.test(label)) label = merchant || buffer.slice(0, 2).join(' – ');
       if (place && !label.toLowerCase().includes(place.toLowerCase())) label = label ? `${label}, ${place}` : place;
       const credit = a.credit || CREDIT.test(label);
-      out.push({ date: curDate, text: label, amount: credit ? -a.value : a.value });
+      out.push({ date: curDate, time: curTime, text: label, amount: credit ? -a.value : a.value });
       reset();
     } else if (hasLetters(line) && !STATUS.test(clean(line))) {
       buffer.push(clean(line));

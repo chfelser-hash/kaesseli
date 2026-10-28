@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalExpr, budgetSummary, monitorPot } from '../public/js/calc.js';
+import { evalExpr, budgetSummary, monitorPot, inPeriod, cycleList } from '../public/js/calc.js';
 import { parseCsv, guessMapping, applyMapping, parseAmount, parseDate } from '../public/js/csv.js';
 
 test('Rechenausdrücke', () => {
@@ -158,4 +158,25 @@ Laden Delta
     ['2026-10-24', 'Laden Gamma, Musterdorf', 7.3],
     ['2026-10-23', 'Laden Delta', 19.8],
   ]);
+});
+
+test('Abrechnungszyklen und Uhrzeit-Abgrenzung', () => {
+  const st = [{ id: 'a', at: '2026-10-20T08:15' }, { id: 'b', at: '2026-11-26T09:40' }];
+  const c = cycleList(st);
+  assert.equal(c.closed[0].from, '2026-10-20T08:15');
+  assert.equal(c.closed[0].to, '2026-11-26T09:40');
+  assert.equal(c.open.from, '2026-11-26T09:40');
+  const { from, to } = c.closed[0];
+  assert.equal(inPeriod({ date: '2026-10-20', time: '08:00' }, from, to), false); // vor der vorherigen Abrechnung
+  assert.equal(inPeriod({ date: '2026-10-20', time: '13:52' }, from, to), true);
+  assert.equal(inPeriod({ date: '2026-11-26', time: '09:39' }, from, to), true);
+  assert.equal(inPeriod({ date: '2026-11-26', time: '09:41' }, from, to), false); // gehört in den nächsten Zyklus
+  assert.equal(inPeriod({ date: '2026-10-20' }, from, to), false); // ohne Uhrzeit am Starttag: Anzeige nein
+  assert.equal(inPeriod({ date: '2026-10-20' }, from, to, true), true); // Import ja (Duplikate werden erkannt)
+  assert.equal(inPeriod({ date: '2026-11-26' }, from, to), true);
+});
+
+test('Eingefügter Text übernimmt die Uhrzeit', () => {
+  const r = parsePastedText('Laden Epsilon\n24.10.2026 13:52 Musterdorf\n7.30  CHF\nLaden Zeta\n23.10.2026\n5.00 CHF', new Date(2026, 9, 28));
+  assert.deepEqual(r.map((x) => [x.date, x.time]), [['2026-10-24', '13:52'], ['2026-10-23', '']]);
 });

@@ -81,6 +81,7 @@ export function migrate(d) {
   out.rev = out.rev || 1;
   out.years = out.years || {};
   out.transactions = Array.isArray(out.transactions) ? out.transactions : [];
+  out.settlements = Array.isArray(out.settlements) ? out.settlements : [];
   out.settings = out.settings || {};
   out.settings.accounts = out.settings.accounts || ['Kreditkarte', 'Postkonto', 'Bar'];
   out.settings.rules = out.settings.rules || [];

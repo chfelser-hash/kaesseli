@@ -1,7 +1,7 @@
 // Tab «Erfassen»: Abrechnungen schnell eintragen und den aktuellen Monat im Blick behalten
 import { h, toast, modal, chips, confirmDialog } from '../ui.js';
 import { state, api, yearForDate, render } from '../app.js';
-import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, fmtDate, MONTHS, potMonthly } from '../calc.js';
+import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, fmtDate, MONTHS, potMonthly, nowStamp, nowTime, fmtStamp, cycleList, inPeriod } from '../calc.js';
 
 const LS = 'budget.entry';
 const saved = (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })();
@@ -20,7 +20,8 @@ let month = null;
 let filterPot = '';
 let filterAcc = null; // null = alle, '' = ohne Angabe
 let accOpen = true;
-const range = { on: false, from: '', to: '' }; // frei wählbarer Zeitraum
+// Ansicht: Kalendermonat oder Abrechnungszyklus (offen seit letzter Abrechnung, frühere Zyklen, frei wählbar)
+const view = { mode: 'month', sel: 'open', from: '', to: '' };
 const lastDay = (ymStr) => { const [yy, mm] = ymStr.split('-').map(Number); return `${ymStr}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`; };
 let search = '';
 
@@ -137,11 +138,11 @@ function entryCard() {
       const rows = parseBulk(form.bulkText);
       if (!rows.length) return toast('Keine Beträge erfasst', { error: true });
       if (rows.some((r) => !Number.isFinite(r.amount))) return toast('Mindestens eine Zeile ist unlesbar', { error: true });
-      list = rows.map((r) => ({ amount: r.amount, note: r.text || form.note, pot: form.pot, cat: form.cat, account: form.account, date: form.date }));
+      list = rows.map((r) => ({ amount: r.amount, note: r.text || form.note, pot: form.pot, cat: form.cat, account: form.account, date: form.date, time: entryTime() }));
     } else {
       const v = evalExpr(form.amount);
       if (!form.amount || !Number.isFinite(v)) { amount.focus(); return toast('Betrag fehlt oder ist ungültig', { error: true }); }
-      list = [{ amount: v, note: form.note, pot: form.pot, cat: form.cat, account: form.account, date: form.date }];
+      list = [{ amount: v, note: form.note, pot: form.pot, cat: form.cat, account: form.account, date: form.date, time: entryTime() }];
     }
     try {
       const res = await api('POST', '/api/tx', list);
@@ -155,7 +156,7 @@ function entryCard() {
       form.note = '';
       form.bulkText = '';
       state.busy = false;
-      if (!range.on) month = ym(form.date);
+      if (view.mode === 'month') month = ym(form.date);
       render();
       setTimeout(() => document.querySelector(form.bulk ? '.entry textarea' : '.amount-input')?.focus(), 0);
     } catch (ex) {
@@ -195,6 +196,9 @@ function entryCard() {
   if (matchMedia('(pointer:fine)').matches) setTimeout(() => (form.bulk ? bulkArea : amount).focus(), 0);
   return card;
 }
+
+// Heute erfasste Ausgaben bekommen die aktuelle Uhrzeit (wichtig für die Abgrenzung zur Abrechnung)
+const entryTime = () => (form.date === todayStr() ? nowTime() : '');
 
 function parseBulk(text) {
   return text.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
@@ -252,38 +256,67 @@ async function undo(ids) {
 // ---------- Monatsübersicht & Liste ----------
 function monthPanel() {
   const today = todayStr();
-  if (!range.from) { range.from = month + '-01'; range.to = lastDay(month); }
-  const isRange = range.on;
-  const from = isRange ? range.from : month + '-01';
-  const to = isRange ? range.to : lastDay(month);
+  const isRange = view.mode === 'cycle';
+  const cyc = cycleList(state.data.settlements);
+  // Zeitraum bestimmen
+  let from, to, pFrom = null, pTo = null, inclFrom = false, periodLabel = '';
+  if (!isRange) {
+    from = month + '-01';
+    to = lastDay(month);
+  } else if (view.sel === 'custom') {
+    if (!view.from) { view.from = cyc.last ? cyc.last.at.slice(0, 10) : month + '-01'; view.to = today; }
+    from = view.from; to = view.to; pFrom = from; pTo = to + 'T23:59'; inclFrom = true;
+    periodLabel = `${fmtDate(from)} – ${fmtDate(to)}`;
+  } else {
+    const c = view.sel === 'open' ? cyc.open : cyc.closed.find((x) => x.id === view.sel) || cyc.open;
+    if (c === cyc.open) view.sel = 'open';
+    pFrom = c.from; pTo = c.to;
+    from = c.from ? c.from.slice(0, 10) : '0000-01-01';
+    to = c.to ? c.to.slice(0, 10) : '9999-12-31';
+    periodLabel = `${c.from ? fmtStamp(c.from) : 'Beginn'} – ${c.to ? fmtStamp(c.to) : 'heute'}`;
+  }
   const [y, m] = month.split('-').map(Number);
   // Töpfe aus allen Budgetjahren im Zeitraum (gleicher Schlüssel = gleicher Topf)
   const potMap = new Map();
-  for (let yy = Number(from.slice(0, 4)); yy <= Number(to.slice(0, 4)); yy++) {
+  const y0 = Math.max(Number(from.slice(0, 4)), 2000), y1 = Math.min(Number(to.slice(0, 4)), Number(today.slice(0, 4)) + 2);
+  for (let yy = y0; yy <= y1; yy++) {
     for (const p of state.data.years[yy]?.pots || []) if (!potMap.has(p.key)) potMap.set(p.key, p);
   }
+  if (!potMap.size) for (const p of state.data.years[y]?.pots || []) potMap.set(p.key, p);
   const yearBudget = { pots: [...potMap.values()] };
   const pots = yearBudget.pots.filter((p) => p.tracked);
-  const txMonth = state.data.transactions.filter((t) => t.date >= from && t.date <= to);
+  const txMonth = isRange
+    ? state.data.transactions.filter((t) => inPeriod(t, pFrom, pTo, inclFrom))
+    : state.data.transactions.filter((t) => t.date >= from && t.date <= to);
 
   const sumBy = (key) => txMonth.filter((t) => t.pot === key).reduce((a, t) => a + t.amount, 0);
 
   const modeSegs = h('div', { class: 'segs', role: 'tablist' },
-    h('button', { class: 'seg' + (isRange ? '' : ' on'), onclick: () => { range.on = false; render(); } }, 'Monat'),
-    h('button', { class: 'seg' + (isRange ? ' on' : ''), onclick: () => { range.on = true; range.from = from; range.to = to; render(); } }, 'Zeitraum')
+    h('button', { class: 'seg' + (isRange ? '' : ' on'), onclick: () => { view.mode = 'month'; render(); } }, 'Monat'),
+    h('button', { class: 'seg' + (isRange ? ' on' : ''), onclick: () => { view.mode = 'cycle'; render(); } }, 'Abrechnung')
   );
-  const setRange = (f, t) => {
+  const settleBtn = h('button', { class: 'btn primary settle-btn', onclick: settleNow, title: 'Abrechnungszeitpunkt speichern' }, 'Jetzt abrechnen');
+  const setCustom = (f, t) => {
     if (!f || !t) return;
     if (f > t) [f, t] = [t, f];
-    range.from = f;
-    range.to = t;
+    view.from = f;
+    view.to = t;
     render();
   };
+  const cycleSelect = h('select', { class: 'cycle-select', 'aria-label': 'Abrechnungszyklus', onchange: (e) => { view.sel = e.target.value; if (view.sel === 'custom') { view.from = ''; } render(); } },
+    h('option', { value: 'open', selected: view.sel === 'open' }, cyc.last ? `Seit letzter Abrechnung (${fmtStamp(cyc.last.at)})` : 'Seit Beginn (noch keine Abrechnung)'),
+    cyc.closed.map((c) => h('option', { value: c.id, selected: view.sel === c.id }, `Abrechnung ${fmtStamp(c.to)}${c.from ? ` (ab ${fmtStamp(c.from)})` : ''}`)),
+    h('option', { value: 'custom', selected: view.sel === 'custom' }, 'Zeitraum frei wählen …')
+  );
   const head = isRange
     ? h('div', { class: 'month-head range' },
       modeSegs,
-      h('label', null, 'von', h('input', { type: 'date', value: from, onchange: (e) => setRange(e.target.value, to) })),
-      h('label', null, 'bis', h('input', { type: 'date', value: to, onchange: (e) => setRange(from, e.target.value) })))
+      cycleSelect,
+      view.sel === 'custom' ? [
+        h('label', null, 'von', h('input', { type: 'date', value: from, onchange: (e) => setCustom(e.target.value, to) })),
+        h('label', null, 'bis', h('input', { type: 'date', value: to, onchange: (e) => setCustom(from, e.target.value) }))] : null,
+      h('div', { class: 'spacer' }),
+      settleBtn)
     : h('div', { class: 'month-head' },
       h('button', { class: 'icon-btn', 'aria-label': 'Vorheriger Monat', onclick: () => { month = shiftMonth(month, -1); render(); } }, '‹'),
       h('h2', null, `${MONTHS[m - 1]} ${y}`),
@@ -363,7 +396,7 @@ function monthPanel() {
         h('header', { style: { '--c': pot?.color || '#888' } }, h('span', { class: 'dot' }), h('strong', null, pot?.name || 'Andere'), h('span', { class: 'sum' }, fmt(sum))),
         h('ul', { class: 'tx-list' }, items.map((t) =>
           h('li', null, h('button', { class: 'tx' + (t.date > today ? ' planned' : ''), onclick: () => editTx(t) },
-            h('span', { class: 'tx-date' }, fmtDateShort(t.date)),
+            h('span', { class: 'tx-date' }, fmtDateShort(t.date), isRange && t.time ? h('small', null, t.time) : null),
             h('span', { class: 'tx-main' },
               h('span', { class: 'tx-note' }, t.note || t.cat || pot?.name || '–'),
               h('span', { class: 'tx-meta' }, [t.note && t.cat ? t.cat : null, t.account, t.date > today ? 'geplant' : null].filter(Boolean).join(' · '))
@@ -379,12 +412,40 @@ function monthPanel() {
   return h('section', { class: 'card month' },
     head,
     pots.length ? (isRange ? rangeTiles : tiles) : h('p', { class: 'empty' }, isRange ? 'Für diesen Zeitraum gibt es kein Budget.' : `Für ${y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
-    isRange ? h('p', { class: 'hint' }, `${fmtDate(from)} – ${fmtDate(to)} · ${txMonth.length} Buchungen · Total CHF ${fmt(txMonth.reduce((a, t) => a + t.amount, 0))}`) : null,
+    isRange ? h('p', { class: 'hint period' }, `${periodLabel} · ${txMonth.length === 1 ? '1 Buchung' : txMonth.length + ' Buchungen'} · Total CHF ${fmt(txMonth.reduce((a, t) => a + t.amount, 0))}`) : null,
     accountTable(txMonth, yearBudget),
     h('div', { class: 'list-tools' }, searchInput,
       filterPot || filterAcc !== null ? h('button', { class: 'chip on', onclick: () => { filterPot = ''; filterAcc = null; render(); } }, 'Filter ✕') : null),
     listWrap
   );
+}
+
+// ---------- Abrechnen ----------
+/** Speichert den Abrechnungszeitpunkt (Standard: jetzt, anpassbar zum Nachtragen). */
+export async function settleNow() {
+  const cyc = cycleList(state.data.settlements);
+  let at = nowStamp();
+  let note = '';
+  const ok = await modal('Abrechnung speichern', h('div', null,
+    h('p', null, cyc.last ? `Letzte Abrechnung: ${fmtStamp(cyc.last.at)}` : 'Noch keine Abrechnung gespeichert.'),
+    h('div', { class: 'form-grid' },
+      h('label', null, 'Zeitpunkt', h('input', { type: 'datetime-local', value: at, oninput: (e) => (at = e.target.value.slice(0, 16)) })),
+      h('label', null, 'Notiz (optional)', h('input', { placeholder: 'z.B. Monatsabrechnung November', oninput: (e) => (note = e.target.value) }))),
+    h('p', { class: 'hint' }, 'Danach Kreditkarte und Post importieren: Der Import berücksichtigt nur Buchungen zwischen der vorherigen und dieser Abrechnung.')
+  ), [{ label: 'Abbrechen', value: false }, { label: 'Abrechnung speichern', primary: true, value: true }]);
+  if (!ok) return;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)) return toast('Zeitpunkt ungültig', { error: true });
+  try {
+    const res = await api('POST', '/api/settlements', { at, note });
+    state.data.settlements.push(res.settlement);
+    // Abgeschlossenen Zyklus anzeigen
+    view.mode = 'cycle';
+    view.sel = res.settlement.id;
+    render();
+    toast(`Abrechnung ${fmtStamp(at)} gespeichert`, { action: { label: 'Zum Import', fn: () => (location.hash = 'import') }, duration: 8000 });
+  } catch (e) {
+    toast(e.message, { error: true });
+  }
 }
 
 // ---------- Auswertung nach Zahlungsmittel ----------
@@ -432,6 +493,7 @@ export async function editTx(t) {
   const body = h('div', { class: 'form-grid' },
     h('label', null, 'Betrag (CHF)', h('input', { inputmode: 'decimal', value: f.amountStr, oninput: (e) => (f.amountStr = e.target.value) })),
     h('label', null, 'Datum', h('input', { type: 'date', value: f.date, oninput: (e) => (f.date = e.target.value) })),
+    h('label', null, 'Uhrzeit (optional)', h('input', { type: 'time', value: f.time || '', oninput: (e) => (f.time = e.target.value) })),
     h('label', null, 'Topf', h('select', { onchange: (e) => { f.pot = e.target.value; f.cat = ''; fillCats(); } },
       pots.map((p) => h('option', { value: p.key, selected: p.key === f.pot }, p.name + (p.tracked ? '' : ' (nicht getrackt)'))))),
     h('label', null, 'Kategorie', catSel),
