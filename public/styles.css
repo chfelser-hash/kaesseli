@@ -469,3 +469,5 @@ table.cats .go-col { color: var(--ink-3); width: 1.5rem; text-align: right; }
 .flow-total { margin-top: .7rem; padding-top: .5rem; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: .2rem; }
 .flow-total .flow-row.result { margin-top: .2rem; }
 table.lines td.center, table.lines th.center { text-align: center; }
+
+.facts .strong { font-weight: 700; }

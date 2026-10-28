@@ -303,7 +303,7 @@ function summaryCard() {
           h('thead', null, h('tr', null, h('th', null, 'Topf → Konto'), h('th', { class: 'num', title: 'Monatliche Posten' }, 'laufend'), h('th', { class: 'num', title: 'Jährliche/halbjährliche Rechnungen ÷ 12' }, '+ Rückstellung'), h('th', { class: 'num' }, '= pro Monat'), h('th', { class: 'num' }, 'pro Jahr'))),
           tbody, tfoot)),
       h('p', { class: 'hint' }, '«Rückstellung» = jährliche Rechnungen (z.B. Steuern, Krankenkasse, Serafe) geteilt durch 12. So viel muss jeden Monat aufs Konto, damit die Rechnung bei Fälligkeit gedeckt ist.')),
-    h('p', { class: 'hint' }, 'Beträge dürfen Rechnungen sein (z.B. 1500+120 oder 2*7000). Beim Lohn bedeutet «13×»: 12 Monatslöhne plus ein 13. Lohn einmal im Jahr.')
+    h('p', { class: 'hint' }, 'Beträge dürfen Rechnungen sein (z.B. 1500+120 oder 2*7000). Auszahlung: «13×» = 12 Monatslöhne + 13. Lohn im Dezember · halbjährlich = Juni/Dezember · jährlich = Dezember · quartalsweise = März/Juni/Sept./Dezember.')
   );
 }
 

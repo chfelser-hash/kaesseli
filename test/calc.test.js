@@ -228,3 +228,22 @@ test('Geldfluss: feste Spar-Posten (z.B. Säule 3a)', () => {
   assert.equal(c.totalSavingYearly, 400 * 12 + 1000 + 1200);
   assert.equal(c.pots[0].savingMonthly, 100);
 });
+
+test('Sparen: erwartete Einzahlung pro Monat (13. Lohn im Dezember)', () => {
+  const y = {
+    income: [{ name: 'Lohn', expr: '1000', freq: 13 }],
+    pots: [
+      { key: 'a', name: 'Fix', lines: [{ name: 'Miete', expr: '700', freq: 12 }] },
+      { key: 's', name: 'Sparen', kind: 'saving', lines: [{ name: 'Sparen', expr: '400', freq: 12 }] },
+    ],
+  };
+  const c = cashflow(y);
+  assert.equal(c.savingExpectedByMonth[0], 300);
+  assert.equal(c.savingExpectedByMonth[11], 1300);
+  const tx = [{ date: '2026-01-20', amount: 500, pot: 's' }, { date: '2026-02-20', amount: 100, pot: 's' }];
+  const m = monitorPot(y.pots[1], 2026, tx, '2026-02-28', { regular: c.savingMonthly, byMonth: c.savingExpectedByMonth });
+  assert.equal(m.cumDiff, 200 - 200); // +200, -200
+  assert.equal(m.expectedRest, 300 * 9 + 1300);
+  assert.equal(m.forecast, 600 + 300 * 9 + 1300);
+  assert.equal(m.target, 4800);
+});

@@ -5,7 +5,7 @@ export const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', '
 
 export const FREQS = [
   { v: 12, label: 'monatlich' },
-  { v: 13, label: '13× (Lohn)' },
+  { v: 13, label: '13× (13. im Dez.)' },
   { v: 1, label: 'jährlich' },
   { v: 2, label: 'halbjährlich' },
   { v: 4, label: 'quartalsweise' },
@@ -118,14 +118,15 @@ export const fmtSigned = (v) => (v > 0.005 ? '+' : '') + fmt0(v);
  * Für Spartöpfe ist die Differenz Eingezahlt − Ziel (positiv = mehr gespart).
  * "geplant" sind Buchungen mit Datum in der Zukunft.
  */
-export function monitorPot(pot, year, transactions, today = todayStr()) {
-  const budget = potMonthly(pot);
+export function monitorPot(pot, year, transactions, today = todayStr(), expected = null) {
+  // expected: optionales Soll pro Monat (Sparen: erwarteter Rest + Einmalzahlungen wie der 13. Lohn im Dezember)
+  const budget = expected ? expected.regular : potMonthly(pot);
   const saving = pot.kind === 'saving';
   const curYear = Number(today.slice(0, 4));
   const curMonth = Number(today.slice(5, 7));
   // Bis zu welchem Monat gilt das Jahr als "gelaufen"?
   const lastRealized = year < curYear ? 12 : year > curYear ? 0 : curMonth;
-  const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, budget, actual: 0, planned: 0, diff: 0, cum: 0, realized: i + 1 <= lastRealized }));
+  const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, budget: expected ? expected.byMonth[i] : budget, actual: 0, planned: 0, diff: 0, cum: 0, realized: i + 1 <= lastRealized }));
   const byCat = new Map();
   for (const t of transactions) {
     if (t.pot !== pot.key || !t.date.startsWith(year + '-')) continue;
@@ -142,7 +143,7 @@ export function monitorPot(pot, year, transactions, today = todayStr()) {
   let cum = 0;
   for (const m of months) {
     if (m.realized) {
-      m.diff = saving ? m.actual - budget : budget - m.actual;
+      m.diff = saving ? m.actual - m.budget : m.budget - m.actual;
       cum += m.diff;
       m.cum = cum;
     } else {
@@ -152,16 +153,18 @@ export function monitorPot(pot, year, transactions, today = todayStr()) {
   }
   const actualTotal = months.reduce((a, m) => a + m.actual, 0);
   const plannedTotal = months.reduce((a, m) => a + m.planned, 0);
-  const budgetToDate = budget * lastRealized;
-  const yearly = potYearly(pot);
+  const budgetToDate = months.slice(0, lastRealized).reduce((a, m) => a + m.budget, 0);
+  const yearly = expected ? months.reduce((a, m) => a + m.budget, 0) : potYearly(pot);
+  const expectedRest = months.slice(lastRealized).reduce((a, m) => a + m.budget, 0);
   const carry = Number(pot.carryover) || 0;
   return {
     pot, months, byCat, budget, yearly, saving, lastRealized,
-    actualTotal, plannedTotal,
+    actualTotal, plannedTotal, expectedRest, target: potYearly(pot),
     cumDiff: lastRealized ? months[lastRealized - 1].cum : 0,
     // Kontostand des Topfs: Übertrag + einbezahltes Budget − Ausgaben (bei Sparen: Übertrag + Einzahlungen)
     balance: saving ? carry + actualTotal : carry + budgetToDate - actualTotal,
-    forecast: saving ? carry + actualTotal + plannedTotal : carry + yearly - actualTotal - plannedTotal,
+    // Sparen: bisher eingezahlt + was in den restlichen Monaten noch zu erwarten ist
+    forecast: saving ? carry + actualTotal + Math.max(plannedTotal, expected ? expectedRest : 0) : carry + yearly - actualTotal - plannedTotal,
     remainingYear: saving ? yearly - actualTotal - plannedTotal : yearly - actualTotal - plannedTotal,
   };
 }
@@ -226,6 +229,15 @@ export function inPeriod(t, from, to, inclFromDay = false) {
 }
 
 /**
+ * Monate mit Zusatz-/Einmalzahlungen je Rhythmus:
+ * 13× = 13. Lohn im Dezember, halbjährlich = Juni/Dezember, jährlich = Dezember, quartalsweise = Mär/Jun/Sep/Dez.
+ * Monatliche Zahlungen (12) haben keine Zusatzmonate.
+ */
+export function extraMonths(freq) {
+  return { 13: [12], 1: [12], 2: [6, 12], 4: [3, 6, 9, 12] }[Number(freq)] || [];
+}
+
+/**
  * Geldfluss eines Budgetjahres: Was kommt jeden Monat rein, was muss jeden Monat auf die Konten,
  * und was gleicht der 13. Lohn (bzw. andere Einmalzahlungen) aus?
  */
@@ -233,10 +245,14 @@ export function cashflow(y) {
   const f = (l) => Number(l.freq) || 12;
   const incomeMonthly = y.income.filter((l) => f(l) >= 12).reduce((a, l) => a + lineValue(l), 0);
   const extras = [];
+  const extraByMonth = Array(12).fill(0);
   for (const l of y.income) {
     const v = lineValue(l);
-    if (f(l) > 12) extras.push({ name: `${l.name || 'Lohn'}: ${f(l) - 12 === 1 ? '13.' : f(l) - 12 + ' zusätzliche'} Monatslohn`, amount: v * (f(l) - 12) });
-    else if (f(l) < 12) extras.push({ name: l.name || 'Einmalzahlung', amount: v * f(l) });
+    const months = extraMonths(f(l));
+    if (!months.length) continue;
+    for (const m of months) extraByMonth[m - 1] += v;
+    const when = months.map((m) => MONTHS_SHORT[m - 1]).join('/');
+    extras.push({ name: f(l) === 13 ? `${l.name || 'Lohn'}: 13. Monatslohn (${when})` : `${l.name || 'Einmalzahlung'} (${when})`, amount: v * months.length });
   }
   const incomeExtra = extras.reduce((a, e) => a + e.amount, 0);
   const pots = y.pots.map((p) => {
@@ -274,7 +290,9 @@ export function cashflow(y) {
     incomeYearly, yearBalance: incomeYearly - outYearly,
     hasSaving: savingPots.length > 0, savingPots, spendPots, spendMonthly, spendYearly,
     savingTargetMonthly, savingTargetYearly, savingMonthly, savingYearly,
-    fixedSaving, fixedSavingYearly,
+    fixedSaving, fixedSavingYearly, extraByMonth,
+    // Erwartete Spar-Einzahlung pro Monat: Rest + Einmalzahlungen dieses Monats
+    savingExpectedByMonth: extraByMonth.map((x) => savingMonthly + x),
     totalSavingYearly: Math.max(0, savingYearly) + fixedSavingYearly,
     runningTotal: pots.reduce((a, p) => a + p.running, 0),
     reserveTotal: pots.reduce((a, p) => a + p.reserve, 0),

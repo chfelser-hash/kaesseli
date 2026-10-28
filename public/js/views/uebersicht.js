@@ -1,7 +1,7 @@
 // Tab «Übersicht»: Budget vs. Ist pro Topf und Monat (ersetzt das Excel-Monitoring)
 import { h, s } from '../ui.js';
 import { state, currentYear, go, render } from '../app.js';
-import { monitorPot, categoryBreakdown, todayStr, fmt, fmt0, fmtSigned, fmtDate, MONTHS_SHORT } from '../calc.js';
+import { monitorPot, categoryBreakdown, cashflow, todayStr, fmt, fmt0, fmtSigned, fmtDate, MONTHS_SHORT } from '../calc.js';
 import { editTx } from './erfassen.js';
 
 let mode = 'cum'; // 'actual' | 'diff' | 'cum'
@@ -11,7 +11,16 @@ export function renderUebersicht() {
   const today = todayStr();
   const root = h('div', { class: 'view uebersicht' });
   if (!y) return root;
-  const mons = y.pots.filter((p) => p.tracked).map((p) => monitorPot(p, state.year, state.data.transactions, today));
+  // Sparen = Rest am Zyklusende: Soll pro Monat ist der erwartete Rest (+ 13. Lohn usw. im Auszahlungsmonat)
+  const cf = cashflow(y);
+  const targetSum = cf.savingPots.reduce((a, p) => a + p.yearly, 0) || 1;
+  const expectedFor = (p) => {
+    if (p.kind !== 'saving') return null;
+    const share = (cf.savingPots.find((x) => x.key === p.key)?.yearly || 0) / targetSum;
+    return { regular: cf.savingMonthly * share, byMonth: cf.savingExpectedByMonth.map((v) => v * share) };
+  };
+  const mons = y.pots.filter((p) => p.tracked).map((p) => monitorPot(p, state.year, state.data.transactions, today, expectedFor(p)));
+  for (const m of mons) if (m.saving) m.fixedSaving = cf.fixedSaving;
 
   root.append(...[
     h('div', { class: 'cards' }, mons.map(potCard)),
@@ -23,6 +32,7 @@ export function renderUebersicht() {
 }
 
 function potCard(mon) {
+  if (mon.saving) return savingCard(mon);
   const { pot, saving } = mon;
   const cur = mon.lastRealized ? mon.months[mon.lastRealized - 1] : null;
   const good = mon.cumDiff >= 0;
@@ -42,6 +52,37 @@ function potCard(mon) {
       h('dt', null, saving ? 'Prognose Jahresende' : 'Prognose Saldo Jahresende'), h('dd', { class: mon.forecast < 0 ? 'neg' : '' }, fmt0(mon.forecast)),
     ),
     pot.carryover ? h('p', { class: 'hint' }, `inkl. Übertrag ${fmt0(pot.carryover)}`) : null
+  );
+}
+
+/** Sparen: erwartete Einzahlungen statt fixer Monatsrate, Prognose gegen das Sparziel */
+function savingCard(mon) {
+  const { pot } = mon;
+  const cur = mon.lastRealized ? mon.months[mon.lastRealized - 1] : null;
+  const vsTarget = mon.forecast - mon.target;
+  const fixed = mon.fixedSaving || [];
+  const fixedSum = fixed.reduce((a, x) => a + x.yearly, 0);
+  const restMonths = mon.months.slice(mon.lastRealized);
+  const restLabel = restMonths.length ? MONTHS_SHORT[restMonths[0].month - 1] + '–' + MONTHS_SHORT[11] : '';
+  return h('section', { class: 'card pot-card', style: { '--c': pot.color } },
+    h('header', null, h('span', { class: 'dot' }), h('h3', null, pot.name), h('span', { class: 'muted small' }, pot.account)),
+    h('div', { class: 'kpis' },
+      kpi('Erwartet / Mt', fmt0(mon.budget)),
+      kpi(cur ? 'Ist ' + MONTHS_SHORT[cur.month - 1] : 'Ist', cur ? fmt0(cur.actual) : '–'),
+      kpi('Kumuliert', mon.lastRealized ? fmtSigned(mon.cumDiff) : '–', mon.lastRealized ? (mon.cumDiff >= 0 ? 'pos' : 'neg') : ''),
+    ),
+    sparkline(mon),
+    h('button', { class: 'link link-year', onclick: () => go('erfassen', { year: state.year, pot: pot.key }) }, 'Alle Buchungen ' + state.year + ' →'),
+    h('dl', { class: 'facts' },
+      h('dt', null, 'Sparziel Jahr'), h('dd', null, fmt0(mon.target)),
+      h('dt', null, 'Bisher eingezahlt'), h('dd', null, fmt0(mon.actualTotal)),
+      restMonths.length ? [h('dt', null, 'Noch erwartet (' + restLabel + ')'), h('dd', null, fmt0(Math.max(mon.plannedTotal, mon.expectedRest)))] : null,
+      h('dt', null, 'Prognose Jahresende'), h('dd', null, fmt0(mon.forecast)),
+      h('dt', null, vsTarget < 0 ? 'unter dem Ziel' : 'über dem Ziel'), h('dd', { class: vsTarget < 0 ? 'neg' : 'pos' }, fmtSigned(vsTarget)),
+      ...fixed.map((x) => [h('dt', null, x.name + ' (fest)'), h('dd', null, fmt0(x.yearly))]),
+      fixed.length ? [h('dt', { class: 'strong' }, 'Total gespart (Prognose)'), h('dd', { class: 'strong' }, fmt0(mon.forecast + fixedSum))] : null,
+    ),
+    h('p', { class: 'hint' }, 'Erwartet = was nach den festen Überweisungen jeden Monat übrig bleibt; im Dezember inkl. 13. Lohn.')
   );
 }
 
@@ -90,7 +131,7 @@ function monitorTable(mons) {
       h('h2', null, `Monitoring ${state.year}`),
       h('div', { class: 'segs', role: 'tablist' }, seg('actual', 'Ist'), seg('diff', 'Differenz'), seg('cum', 'Kumuliert'))
     ),
-    h('p', { class: 'hint' }, mode === 'actual' ? 'Ausgaben bzw. Einzahlungen pro Monat (hell = geplant).' : 'Grün = besser als Budget, Rot = schlechter. Bei «Sparen» zählt mehr eingezahlt als positiv.'),
+    h('p', { class: 'hint' }, mode === 'actual' ? 'Ausgaben bzw. Einzahlungen pro Monat (hell = geplant).' : 'Grün = besser als Budget, Rot = schlechter. Bei «Sparen» ist das Soll der erwartete Rest (Dezember inkl. 13. Lohn); mehr eingezahlt zählt positiv.'),
     h('div', { class: 'table-scroll' },
       h('table', { class: 'monitor' },
         h('thead', null, h('tr', null, h('th', null, ''), MONTHS_SHORT.map((mo) => h('th', { class: 'num' }, mo)), h('th', { class: 'num' }, 'Jahr'))),
