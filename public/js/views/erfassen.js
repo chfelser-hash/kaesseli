@@ -18,6 +18,8 @@ const form = {
 };
 let month = null;
 let filterPot = '';
+let filterAcc = null; // null = alle, '' = ohne Angabe
+let accOpen = true;
 let search = '';
 
 function remember() {
@@ -29,7 +31,7 @@ const allPots = (date) => yearForDate(date)?.pots || [];
 const potByKey = (key, date) => allPots(date).find((p) => p.key === key);
 
 export function renderErfassen() {
-  if (state.params?.month) { month = state.params.month; filterPot = state.params.pot || ''; state.params = null; }
+  if (state.params?.month) { month = state.params.month; filterPot = state.params.pot || ''; filterAcc = null; state.params = null; }
   if (!month) month = ym(todayStr());
   const pots = trackedPots(form.date);
   if (!pots.find((p) => p.key === form.pot)) form.pot = pots[0]?.key || null;
@@ -293,6 +295,7 @@ function monthPanel() {
   const list = () => {
     let rows = txMonth;
     if (filterPot) rows = rows.filter((t) => t.pot === filterPot);
+    if (filterAcc !== null) rows = rows.filter((t) => (t.account || '') === filterAcc);
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter((t) => `${t.note} ${t.cat} ${t.account} ${fmt(t.amount)}`.toLowerCase().includes(q));
@@ -330,9 +333,39 @@ function monthPanel() {
   return h('section', { class: 'card month' },
     head,
     pots.length ? tiles : h('p', { class: 'empty' }, `Für ${y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
-    h('div', { class: 'list-tools' }, searchInput, filterPot ? h('button', { class: 'chip on', onclick: () => { filterPot = ''; render(); } }, 'Filter ✕') : null),
+    accountTable(txMonth, yearBudget),
+    h('div', { class: 'list-tools' }, searchInput,
+      filterPot || filterAcc !== null ? h('button', { class: 'chip on', onclick: () => { filterPot = ''; filterAcc = null; render(); } }, 'Filter ✕') : null),
     listWrap
   );
+}
+
+// ---------- Auswertung nach Zahlungsmittel ----------
+/** Wie viel wurde im Monat mit welchem Zahlungsmittel bezahlt – aufgeteilt nach Topf. */
+function accountTable(txMonth, yearBudget) {
+  if (!txMonth.length) return null;
+  const potList = yearBudget?.pots || [];
+  const potKeys = [...new Set(txMonth.map((t) => t.pot))];
+  const cols = [...potList.filter((p) => potKeys.includes(p.key)), ...potKeys.filter((k) => !potList.some((p) => p.key === k)).map((k) => ({ key: k, name: 'Andere', color: '#888' }))];
+  const accs = [...new Set([...state.data.settings.accounts, ...txMonth.map((t) => t.account || '')])].filter((a) => txMonth.some((t) => (t.account || '') === a));
+  const sum = (acc, pot) => txMonth.filter((t) => (acc === undefined || (t.account || '') === acc) && (pot === undefined || t.pot === pot)).reduce((a, t) => a + t.amount, 0);
+  const cell = (v) => h('td', { class: 'num' + (v ? '' : ' muted') }, v ? fmt(v) : '–');
+  const det = h('details', { class: 'acc-sum', open: accOpen, ontoggle: () => (accOpen = det.open) },
+    h('summary', null, 'Nach Zahlungsmittel'),
+    h('div', { class: 'table-scroll' },
+      h('table', { class: 'acc-table' },
+        h('thead', null, h('tr', null, h('th', null, ''), cols.map((c) => h('th', { class: 'num', style: { '--c': c.color } }, h('span', { class: 'dot' }), c.name)), h('th', { class: 'num' }, 'Total'))),
+        h('tbody', null, accs.map((a) =>
+          h('tr', { class: 'clickable' + (filterAcc === a ? ' on' : ''), title: 'Liste nach diesem Zahlungsmittel filtern', onclick: () => { filterAcc = filterAcc === a ? null : a; render(); } },
+            h('th', { scope: 'row' }, a || 'ohne Angabe'),
+            cols.map((c) => cell(sum(a, c.key))),
+            h('td', { class: 'num total' }, fmt(sum(a)))
+          ))),
+        h('tfoot', null, h('tr', null, h('th', null, 'Total'), cols.map((c) => h('td', { class: 'num' }, fmt(sum(undefined, c.key)))), h('td', { class: 'num' }, fmt(sum()))))
+      )
+    )
+  );
+  return det;
 }
 
 // ---------- Bearbeiten ----------
