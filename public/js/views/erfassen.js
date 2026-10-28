@@ -1,7 +1,7 @@
 // Tab «Erfassen»: Abrechnungen schnell eintragen und den aktuellen Monat im Blick behalten
 import { h, toast, modal, chips, confirmDialog } from '../ui.js';
 import { state, api, yearForDate, render } from '../app.js';
-import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, MONTHS, potMonthly } from '../calc.js';
+import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, fmtDate, MONTHS, potMonthly } from '../calc.js';
 
 const LS = 'budget.entry';
 const saved = (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })();
@@ -20,6 +20,8 @@ let month = null;
 let filterPot = '';
 let filterAcc = null; // null = alle, '' = ohne Angabe
 let accOpen = true;
+const range = { on: false, from: '', to: '' }; // frei wählbarer Zeitraum
+const lastDay = (ymStr) => { const [yy, mm] = ymStr.split('-').map(Number); return `${ymStr}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`; };
 let search = '';
 
 function remember() {
@@ -153,7 +155,7 @@ function entryCard() {
       form.note = '';
       form.bulkText = '';
       state.busy = false;
-      month = ym(form.date);
+      if (!range.on) month = ym(form.date);
       render();
       setTimeout(() => document.querySelector(form.bulk ? '.entry textarea' : '.amount-input')?.focus(), 0);
     } catch (ex) {
@@ -249,19 +251,63 @@ async function undo(ids) {
 
 // ---------- Monatsübersicht & Liste ----------
 function monthPanel() {
-  const [y, m] = month.split('-').map(Number);
-  const yearBudget = state.data.years[y];
-  const pots = (yearBudget?.pots || []).filter((p) => p.tracked);
   const today = todayStr();
-  const txMonth = state.data.transactions.filter((t) => t.date.startsWith(month));
+  if (!range.from) { range.from = month + '-01'; range.to = lastDay(month); }
+  const isRange = range.on;
+  const from = isRange ? range.from : month + '-01';
+  const to = isRange ? range.to : lastDay(month);
+  const [y, m] = month.split('-').map(Number);
+  // Töpfe aus allen Budgetjahren im Zeitraum (gleicher Schlüssel = gleicher Topf)
+  const potMap = new Map();
+  for (let yy = Number(from.slice(0, 4)); yy <= Number(to.slice(0, 4)); yy++) {
+    for (const p of state.data.years[yy]?.pots || []) if (!potMap.has(p.key)) potMap.set(p.key, p);
+  }
+  const yearBudget = { pots: [...potMap.values()] };
+  const pots = yearBudget.pots.filter((p) => p.tracked);
+  const txMonth = state.data.transactions.filter((t) => t.date >= from && t.date <= to);
 
   const sumBy = (key) => txMonth.filter((t) => t.pot === key).reduce((a, t) => a + t.amount, 0);
 
-  const head = h('div', { class: 'month-head' },
-    h('button', { class: 'icon-btn', 'aria-label': 'Vorheriger Monat', onclick: () => { month = shiftMonth(month, -1); render(); } }, '‹'),
-    h('h2', null, `${MONTHS[m - 1]} ${y}`),
-    h('button', { class: 'icon-btn', 'aria-label': 'Nächster Monat', onclick: () => { month = shiftMonth(month, 1); render(); } }, '›'),
-    month !== ym(today) ? h('button', { class: 'link', onclick: () => { month = ym(today); render(); } }, 'Heute') : null
+  const modeSegs = h('div', { class: 'segs', role: 'tablist' },
+    h('button', { class: 'seg' + (isRange ? '' : ' on'), onclick: () => { range.on = false; render(); } }, 'Monat'),
+    h('button', { class: 'seg' + (isRange ? ' on' : ''), onclick: () => { range.on = true; range.from = from; range.to = to; render(); } }, 'Zeitraum')
+  );
+  const setRange = (f, t) => {
+    if (!f || !t) return;
+    if (f > t) [f, t] = [t, f];
+    range.from = f;
+    range.to = t;
+    render();
+  };
+  const head = isRange
+    ? h('div', { class: 'month-head range' },
+      modeSegs,
+      h('label', null, 'von', h('input', { type: 'date', value: from, onchange: (e) => setRange(e.target.value, to) })),
+      h('label', null, 'bis', h('input', { type: 'date', value: to, onchange: (e) => setRange(from, e.target.value) })))
+    : h('div', { class: 'month-head' },
+      h('button', { class: 'icon-btn', 'aria-label': 'Vorheriger Monat', onclick: () => { month = shiftMonth(month, -1); render(); } }, '‹'),
+      h('h2', null, `${MONTHS[m - 1]} ${y}`),
+      h('button', { class: 'icon-btn', 'aria-label': 'Nächster Monat', onclick: () => { month = shiftMonth(month, 1); render(); } }, '›'),
+      month !== ym(today) ? h('button', { class: 'link', onclick: () => { month = ym(today); render(); } }, 'Heute') : null,
+      h('div', { class: 'spacer' }),
+      modeSegs
+    );
+
+  // Im Zeitraum-Modus gibt es kein Monatsbudget → Kacheln zeigen nur die Summe
+  const rangeTiles = h('div', { class: 'pot-tiles' },
+    pots.map((p) => {
+      const n = txMonth.filter((t) => t.pot === p.key).length;
+      return h('button', {
+        class: 'pot-tile' + (filterPot === p.key ? ' on' : ''),
+        style: { '--c': p.color },
+        onclick: () => { filterPot = filterPot === p.key ? '' : p.key; render(); },
+        title: 'Liste nach diesem Topf filtern',
+      },
+        h('span', { class: 'pt-name' }, p.name),
+        h('span', { class: 'pt-val' }, fmt0(sumBy(p.key))),
+        h('span', { class: 'pt-rest' }, n === 1 ? '1 Buchung' : `${n} Buchungen`)
+      );
+    })
   );
 
   const tiles = h('div', { class: 'pot-tiles' },
@@ -301,7 +347,7 @@ function monthPanel() {
       rows = rows.filter((t) => `${t.note} ${t.cat} ${t.account} ${fmt(t.amount)}`.toLowerCase().includes(q));
     }
     rows = [...rows].sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
-    if (!rows.length) return h('p', { class: 'empty' }, txMonth.length ? 'Keine Treffer.' : 'Noch keine Buchungen in diesem Monat.');
+    if (!rows.length) return h('p', { class: 'empty' }, txMonth.length ? 'Keine Treffer.' : isRange ? 'Keine Buchungen in diesem Zeitraum.' : 'Noch keine Buchungen in diesem Monat.');
 
     const groups = filterPot ? [[filterPot, rows]] : pots.map((p) => [p.key, rows.filter((t) => t.pot === p.key)]).filter(([, r]) => r.length);
     // Buchungen in Töpfen, die (nicht mehr) getrackt sind
@@ -332,7 +378,8 @@ function monthPanel() {
 
   return h('section', { class: 'card month' },
     head,
-    pots.length ? tiles : h('p', { class: 'empty' }, `Für ${y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
+    pots.length ? (isRange ? rangeTiles : tiles) : h('p', { class: 'empty' }, isRange ? 'Für diesen Zeitraum gibt es kein Budget.' : `Für ${y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
+    isRange ? h('p', { class: 'hint' }, `${fmtDate(from)} – ${fmtDate(to)} · ${txMonth.length} Buchungen · Total CHF ${fmt(txMonth.reduce((a, t) => a + t.amount, 0))}`) : null,
     accountTable(txMonth, yearBudget),
     h('div', { class: 'list-tools' }, searchInput,
       filterPot || filterAcc !== null ? h('button', { class: 'chip on', onclick: () => { filterPot = ''; filterAcc = null; render(); } }, 'Filter ✕') : null),

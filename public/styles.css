@@ -389,3 +389,9 @@ table.acc-table tr.clickable:hover { background: var(--line-2); }
 table.acc-table tr.on { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 table.acc-table tr.on th { color: var(--accent); }
 .list-tools .chip { white-space: nowrap; flex: none; }
+
+.month-head .segs { flex: none; }
+.month-head.range { flex-wrap: wrap; align-items: flex-end; }
+.month-head.range label { flex-direction: row; align-items: center; gap: .4rem; }
+.month-head.range input { width: auto; }
+.month-head { flex-wrap: wrap; row-gap: .5rem; }
