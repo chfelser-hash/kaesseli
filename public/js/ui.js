@@ -69,7 +69,9 @@ export function modal(title, content, buttons = [{ label: 'Schliessen' }]) {
               type: b.primary ? 'submit' : 'button',
               class: 'btn' + (b.primary ? ' primary' : '') + (b.danger ? ' danger' : ''),
               onclick: async () => {
-                const r = b.onClick ? await b.onClick() : b.value;
+                // Nur ein onClick, das ausdrücklich false liefert, hält den Dialog offen
+                if (!b.onClick) return close(b.value ?? b.label);
+                const r = await b.onClick();
                 if (r !== false) close(r === undefined ? b.value ?? b.label : r);
               },
             }, b.label)
