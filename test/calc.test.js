@@ -76,3 +76,26 @@ test('Beträge und Daten', () => {
   assert.equal(parseAmount('12.00-'), -12);
   assert.equal(parseDate('5.3.26'), '2026-03-05');
 });
+
+import { parsePastedText } from '../public/js/csv.js';
+
+test('Eingefügter Text: Datumsüberschriften, Händler über Betrag, Gutschrift', () => {
+  const today = new Date(2026, 9, 28);
+  const txt = [
+    'Verfügbarer Saldo', 'CHF 4\'321.10',
+    'Mittwoch, 22. Oktober 2026',
+    'Coop Pronto Zürich', 'Lebensmittel', 'CHF 23.50',
+    'SBB CFF FFS\tReisen\tCHF 1\'204.00',
+    '21. Okt.',
+    'Amazon Marketplace', 'Ausstehend', 'EUR 45.00', 'CHF 43.20',
+    'Gutschrift Migros', '+ CHF 10.00',
+    '15.10.2026 Shell Tankstelle 86.50',
+  ].join('\n');
+  const r = parsePastedText(txt, today);
+  assert.deepEqual(r.map((x) => [x.date, x.amount]), [
+    ['2026-10-22', 23.5], ['2026-10-22', 1204], ['2026-10-21', 43.2], ['2026-10-21', -10], ['2026-10-15', 86.5],
+  ]);
+  assert.equal(r[0].text, 'Coop Pronto Zürich – Lebensmittel');
+  assert.ok(r[1].text.startsWith('SBB CFF FFS'));
+  assert.equal(r[2].text, 'Amazon Marketplace');
+});

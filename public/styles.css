@@ -395,3 +395,6 @@ table.acc-table tr.on th { color: var(--accent); }
 .month-head.range label { flex-direction: row; align-items: center; gap: .4rem; }
 .month-head.range input { width: auto; }
 .month-head { flex-wrap: wrap; row-gap: .5rem; }
+
+.import-file .btn { flex: none; }
+.paste-area { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; min-height: 220px; }

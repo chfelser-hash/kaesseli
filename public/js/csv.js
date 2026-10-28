@@ -166,3 +166,113 @@ export function applyMapping(rows, map) {
   }
   return out;
 }
+
+// ---------- Eingefügter Text (z.B. Transaktionsliste aus Viseca One kopiert) ----------
+const MONTH_NAMES = {
+  jan: 1, januar: 1, feb: 2, februar: 2, mär: 3, mar: 3, märz: 3, maerz: 3, apr: 4, april: 4, mai: 5, may: 5,
+  jun: 6, juni: 6, june: 6, jul: 7, juli: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+  okt: 10, oct: 10, oktober: 10, october: 10, nov: 11, november: 11, dez: 12, dec: 12, dezember: 12, december: 12,
+};
+const pad2 = (n) => String(n).padStart(2, '0');
+const isoDate = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`;
+// Zeilen mit diesen Wörtern sind keine Transaktionen (Kontostand, Limite, Totale …)
+const NOISE = /saldo|limite|verfügbar|verfuegbar|\btotal\b|summe|rechnungsbetrag|mindestzahlung|offener betrag|ausgaben diesen monat/i;
+// Statuszeilen, die nicht als Händlername taugen
+const STATUS = /^(ausstehend|reserviert|gebucht|pending|in bearbeitung|autorisiert|belastet)$/i;
+const CREDIT = /gutschrift|rückerstattung|rueckerstattung|erstattung|zahlung erhalten|einzahlung|ihre zahlung|refund/i;
+
+/** Sucht ein Datum in der Zeile. Liefert {date, rest} oder null. */
+export function findDateInLine(line, today = new Date()) {
+  const cy = today.getFullYear();
+  const todayIso = isoDate(cy, today.getMonth() + 1, today.getDate());
+  const fixYear = (y, m, d) => {
+    // Ohne Jahresangabe: Datum in der Zukunft gehört zum Vorjahr
+    let iso = isoDate(y, m, d);
+    if (iso > todayIso) iso = isoDate(y - 1, m, d);
+    return iso;
+  };
+  let m;
+  if ((m = line.match(/\b(\d{4})-(\d{2})-(\d{2})\b/))) return { date: `${m[1]}-${m[2]}-${m[3]}`, rest: line.replace(m[0], ' ') };
+  if ((m = line.match(/\b(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})\b/))) {
+    const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    if (Number(m[2]) >= 1 && Number(m[2]) <= 12 && Number(m[1]) <= 31) return { date: isoDate(y, Number(m[2]), Number(m[1])), rest: line.replace(m[0], ' ') };
+  }
+  // 22. Oktober 2026 / 22. Okt. 2026 / Mittwoch, 22. Okt
+  if ((m = line.match(/\b(\d{1,2})\.?\s*([A-Za-zÄÖÜäöü]{3,9})\.?(?:\s+(\d{4}))?/))) {
+    const mon = MONTH_NAMES[m[2].toLowerCase()];
+    if (mon && Number(m[1]) <= 31) {
+      const date = m[3] ? isoDate(Number(m[3]), mon, Number(m[1])) : fixYear(cy, mon, Number(m[1]));
+      return { date, rest: line.replace(m[0], ' ').replace(/^(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|mo|di|mi|do|fr|sa|so)\.?,?\s*/i, '') };
+    }
+  }
+  // 22.10. (ohne Jahr) – nur wenn danach kein weiterer Ziffernblock folgt (sonst ist es ein Betrag)
+  if ((m = line.match(/(?:^|\s)(\d{1,2})\.(\d{1,2})\.(?=\s|$)/))) {
+    if (Number(m[2]) >= 1 && Number(m[2]) <= 12) return { date: fixYear(cy, Number(m[2]), Number(m[1])), rest: line.replace(m[0], ' ') };
+  }
+  const t = line.trim().toLowerCase().replace(/[,.:]$/, '');
+  if (t === 'heute') return { date: todayIso, rest: '' };
+  if (t === 'gestern') {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    return { date: isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate()), rest: '' };
+  }
+  return null;
+}
+
+/** Sucht den CHF-Betrag in der Zeile. Liefert {value, credit, rest} oder null. */
+export function findAmountInLine(line) {
+  const re = /([+\-−–]\s*)?(CHF\s*)?(\d{1,3}(?:['’   ]\d{3})+|\d+)[.,](\d{2})(?!\d)(\s*CHF)?/g;
+  const all = [...line.matchAll(re)];
+  if (!all.length) return null;
+  // Bevorzugt der Betrag mit «CHF», sonst der letzte (Fremdwährung steht meist davor)
+  const m = all.find((x) => x[2] || x[5]) || all[all.length - 1];
+  const value = Number(m[3].replace(/\D/g, '') + '.' + m[4]);
+  const sign = (m[1] || '').trim();
+  let rest = line;
+  for (const x of all) rest = rest.replace(x[0], ' ');
+  rest = rest.replace(/\b(CHF|EUR|USD|GBP)\b/g, ' ');
+  return { value, credit: sign === '+', debit: sign && sign !== '+', rest };
+}
+
+const clean = (s) => s.replace(/\s+/g, ' ').replace(/^[\s·•|,;:–-]+|[\s·•|,;:–-]+$/g, '').trim();
+const hasLetters = (s) => /[A-Za-zÄÖÜäöüéèà]{2,}/.test(s);
+
+/**
+ * Liest kopierten Text einer Transaktionsliste. Erkennt Datumsüberschriften («22. Oktober 2026»),
+ * Zeilen mit Datum + Händler + Betrag und Händlernamen, die eine Zeile über dem Betrag stehen.
+ * Ausgaben werden positiv, Gutschriften negativ zurückgegeben.
+ */
+export function parsePastedText(text, today = new Date()) {
+  const out = [];
+  let curDate = null;
+  let buffer = [];
+  for (let raw of text.split(/\r?\n/)) {
+    let line = raw.replace(/\t+/g, '  ').trim();
+    if (!line) continue;
+    if (NOISE.test(line)) { buffer = []; continue; }
+    const d = findDateInLine(line, today);
+    if (d) {
+      curDate = d.date;
+      line = d.rest.trim();
+      if (!findAmountInLine(line)) {
+        buffer = hasLetters(line) && !STATUS.test(clean(line)) ? [clean(line)] : [];
+        continue;
+      }
+    }
+    const a = findAmountInLine(line);
+    // Betrag in Fremdwährung (z.B. «EUR 45.00»): der CHF-Betrag folgt separat → Zeile überspringen
+    if (a && /\b(EUR|USD|GBP|THB|IDR|JPY|EGP|AUD|CAD|SEK|NOK|DKK)\b/.test(line) && !/CHF/.test(line)) continue;
+    if (a) {
+      if (!curDate) { buffer = []; continue; }
+      let label = clean(a.rest);
+      if (!hasLetters(label) || STATUS.test(label)) label = buffer.slice(0, 2).join(' – ');
+      const credit = a.credit || CREDIT.test(label);
+      out.push({ date: curDate, text: label, amount: credit ? -a.value : a.value });
+      buffer = [];
+    } else if (hasLetters(line) && !STATUS.test(clean(line))) {
+      buffer.push(clean(line));
+      if (buffer.length > 3) buffer.shift();
+    }
+  }
+  return out;
+}

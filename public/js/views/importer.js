@@ -1,7 +1,7 @@
 // Tab «Import»: Kontoauszüge (CSV) einlesen, Töpfen zuordnen, Regeln lernen
 import { h, toast, modal } from '../ui.js';
 import { state, api, render, yearForDate } from '../app.js';
-import { readFileText, parseCsv, guessMapping, applyMapping } from '../csv.js';
+import { readFileText, parseCsv, guessMapping, applyMapping, parsePastedText } from '../csv.js';
 import { fmt, fmtDate, hashStr } from '../calc.js';
 
 const IGNORE = '__ignore';
@@ -11,7 +11,7 @@ export function renderImport() {
   const root = h('div', { class: 'view import' });
   root.append(fileCard());
   if (imp) {
-    root.append(mappingCard());
+    if (imp.kind !== 'text') root.append(mappingCard());
     root.append(previewCard());
   } else {
     root.append(helpCard());
@@ -23,7 +23,7 @@ function helpCard() {
   return h('section', { class: 'card' },
     h('h2', null, 'So funktioniert der Import'),
     h('ol', { class: 'steps' },
-      h('li', null, 'Im E-Banking (z.B. PostFinance) bzw. im Kreditkarten-Portal die Bewegungen als CSV exportieren.'),
+      h('li', null, 'Im E-Banking (z.B. PostFinance) die Bewegungen als CSV exportieren – oder bei Portalen ohne Export (z.B. Viseca One) die Transaktionsliste markieren, kopieren und mit «Text einfügen» übernehmen.'),
       h('li', null, 'Datei hier auswählen und das Konto angeben. Spalten werden automatisch erkannt; einmal geprüft, wird das Format als Profil gespeichert.'),
       h('li', null, 'Jede Zeile einem Topf zuordnen oder ignorieren (z.B. Lohn, Miete, Umbuchungen). Mit «Regel» merkt sich die App die Zuordnung für das nächste Mal.'),
       h('li', null, 'Bereits importierte Zeilen werden erkannt und nicht doppelt übernommen.')
@@ -53,12 +53,39 @@ function fileCard() {
     h('div', { class: 'card-head' }, h('h2', null, 'Auszug importieren'), imp ? h('button', { class: 'link', onclick: () => { imp = null; state.busy = false; render(); } }, 'Abbrechen') : null),
     h('div', { class: 'import-file' },
       h('label', { class: 'btn primary file-btn' }, imp ? 'Andere Datei …' : 'CSV-Datei wählen …', input),
+      h('button', { class: 'btn', onclick: pasteDialog }, 'Text einfügen …'),
       imp ? h('span', { class: 'muted' }, imp.fileName) : null
     ),
     imp ? h('div', { class: 'field' }, h('span', { class: 'label' }, 'Konto dieses Auszugs'),
       h('select', { onchange: (e) => { imp.account = e.target.value; recalcItems(); render(); } },
         accounts.map((a) => h('option', { value: a, selected: a === imp.account }, a)))) : null
   );
+}
+
+async function pasteDialog() {
+  let text = '';
+  const ta = h('textarea', {
+    rows: 12, class: 'paste-area',
+    placeholder: 'Hier einfügen (Strg+V) …\n\nViseca One: Transaktionen öffnen, nach unten scrollen bis der gewünschte Zeitraum geladen ist, dann die Liste mit der Maus markieren (oder Strg+A) und kopieren (Strg+C).',
+    oninput: (e) => { text = e.target.value; info.textContent = preview(text); },
+  });
+  const info = h('p', { class: 'hint' });
+  const preview = (t) => {
+    const r = parsePastedText(t);
+    return t.trim() ? (r.length ? `${r.length} Transaktionen erkannt · Total CHF ${fmt(r.reduce((a, x) => a + x.amount, 0))}` : 'Noch keine Transaktionen erkannt (Datum und CHF-Betrag nötig).') : '';
+  };
+  const ok = await modal('Transaktionen einfügen', h('div', null, ta, info,
+    h('p', { class: 'hint' }, 'Erkannt werden Datum (auch Überschriften wie «22. Oktober 2026»), Händler und CHF-Betrag. Kontostand, Limite und Totale werden übersprungen.')), [
+    { label: 'Abbrechen', value: false },
+    { label: 'Weiter', primary: true, onClick: () => { if (!parsePastedText(text).length) { toast('Keine Transaktionen erkannt', { error: true }); return false; } return true; } },
+  ]);
+  if (!ok) return;
+  const accounts = state.data.settings.accounts;
+  const account = accounts.find((a) => /kredit|visa|master|cumulus|viseca/i.test(a)) || accounts[0] || '';
+  imp = { kind: 'text', fileName: 'Eingefügter Text', text, account, items: [] };
+  state.busy = true;
+  recalcItems();
+  render();
 }
 
 function startImport(fileName, rows) {
@@ -78,7 +105,7 @@ function startImport(fileName, rows) {
 }
 
 function recalcItems() {
-  const parsed = applyMapping(imp.rows, imp.map);
+  const parsed = imp.kind === 'text' ? parsePastedText(imp.text) : applyMapping(imp.rows, imp.map);
   const existingSrc = new Set(state.data.transactions.map((t) => t.src).filter(Boolean));
   const byDateAmt = new Set(state.data.transactions.map((t) => `${t.date}|${t.amount.toFixed(2)}`));
   const rules = state.data.settings.rules;

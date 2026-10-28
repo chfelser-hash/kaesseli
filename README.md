@@ -88,7 +88,7 @@ Tab **Budget → + Neues Jahr**: Vorlage wählen (z.B. Budget 2026 kopieren). Di
 ## 6. Import von Kontoauszügen
 
 - **PostFinance:** E-Finance → Konto → Bewegungen → Export «CSV».
-- **Kreditkarte:** im Kartenportal bzw. in der App die Transaktionen als CSV exportieren (falls nur PDF verfügbar ist, bleibt die Sammelerfassung im Tab «Erfassen»).
+- **Kreditkarte (Viseca One / Migros Cumulus):** Viseca One bietet keinen Export der aktuellen Transaktionen. Stattdessen auf <https://one.viseca.ch> → Transaktionen bis zum gewünschten Datum nach unten scrollen, die Liste markieren (oder Strg+A), kopieren (Strg+C) und in Kässeli unter **Import → Text einfügen …** einfügen. Datum, Händler und CHF-Betrag werden erkannt, Fremdwährungsbeträge, Kontostand und Limite übersprungen, Zahlungen an die Karte als Gutschrift erkannt (standardmässig ignoriert). Bereits übernommene Transaktionen werden beim nächsten Einfügen als Duplikat markiert – man kann also immer die ganze Liste einfügen.
 
 Beim ersten Import einer neuen Bank die erkannten Spalten prüfen und **Als Profil speichern**. Beim nächsten Mal wird das Format automatisch erkannt. Zeilen wie Lohn, Miete oder Umbuchungen auf «— ignorieren —» setzen und mit **Regel** merken.
 
