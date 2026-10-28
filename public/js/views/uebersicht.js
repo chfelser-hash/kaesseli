@@ -2,7 +2,8 @@
 import { h, s } from '../ui.js';
 import { state, currentYear, go, render } from '../app.js';
 import { monitorPot, categoryBreakdown, cashflow, todayStr, fmt, fmt0, fmtSigned, fmtDate, MONTHS_SHORT } from '../calc.js';
-import { editTx } from './erfassen.js';
+import { editTx, bulkAssign } from './erfassen.js';
+import { modal, toast } from '../ui.js';
 
 let mode = 'cum'; // 'actual' | 'diff' | 'cum'
 
@@ -152,20 +153,24 @@ function categoryCard(mon) {
   const tot = rows.reduce((a, r) => ({ yearly: a.yearly + r.yearly, actual: a.actual + r.actual, planned: a.planned + r.planned }), { yearly: 0, actual: 0, planned: 0 });
   const rest = (r) => r.yearly - r.actual - r.planned;
   return h('section', { class: 'card', style: { '--c': mon.pot.color } },
-    h('div', { class: 'card-head' }, h('h2', null, h('span', { class: 'dot' }), `${mon.pot.name} nach Kategorie`)),
+    h('div', { class: 'card-head' }, h('h2', null, h('span', { class: 'dot' }), `${mon.pot.name} nach Kategorie`),
+      rows.some((r) => r.unbudgeted && r.key === '' && r.count) ? h('button', { class: 'btn', onclick: () => autoAssign(mon) }, 'Ohne Kategorie automatisch zuordnen …') : null),
     h('div', { class: 'table-scroll' },
       h('table', { class: 'cats' },
         h('thead', null, h('tr', null, h('th', null, 'Kategorie'), h('th', { class: 'num' }, 'Budget Jahr'), h('th', { class: 'num' }, 'Bisher'), h('th', { class: 'num' }, 'Geplant'), h('th', { class: 'num' }, 'Verbleibend'), h('th', { class: 'bar-col' }, ''), h('th'))),
         h('tbody', null, rows.map((r) => {
-          const used = r.yearly > 0 ? (r.actual + r.planned) / r.yearly : r.actual + r.planned > 0 ? 1.01 : 0;
+          // Kategorie ohne eigenes Budget (Betrag 0): nur gruppieren, nicht als überzogen markieren
+          const noBudget = !r.unbudgeted && r.yearly === 0;
+          const potSpent = tot.actual + tot.planned || 1;
+          const used = noBudget ? (r.actual + r.planned) / potSpent : r.yearly > 0 ? (r.actual + r.planned) / r.yearly : r.actual + r.planned > 0 ? 1.01 : 0;
           const open = () => go('erfassen', { year: state.year, pot: mon.pot.key, cat: r.key });
           return h('tr', { class: 'clickable' + (r.unbudgeted ? ' unbudgeted' : ''), title: `Alle Buchungen «${r.name}» ${state.year} anzeigen`, onclick: open },
             h('td', null, h('button', { class: 'link cat-link', onclick: (e) => { e.stopPropagation(); open(); } }, r.name), h('small', { class: 'muted' }, r.count ? ` (${r.count})` : '')),
-            h('td', { class: 'num' }, fmt0(r.yearly)),
+            h('td', { class: 'num' + (noBudget ? ' muted' : '') }, noBudget ? '–' : fmt0(r.yearly)),
             h('td', { class: 'num' }, fmt0(r.actual)),
             h('td', { class: 'num muted' }, r.planned ? fmt0(r.planned) : ''),
-            h('td', { class: 'num ' + (rest(r) < 0 ? 'neg' : '') }, fmt0(rest(r))),
-            h('td', { class: 'bar-col' }, h('span', { class: 'bar' + (used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } }))),
+            h('td', { class: 'num ' + (noBudget ? 'muted' : rest(r) < 0 ? 'neg' : '') }, noBudget ? '–' : fmt0(rest(r))),
+            h('td', { class: 'bar-col' }, h('span', { class: 'bar' + (noBudget ? ' neutral' : used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } }))),
             h('td', { class: 'go-col' }, '→')
           );
         })),
@@ -173,6 +178,42 @@ function categoryCard(mon) {
       )
     )
   );
+}
+
+/** Schlägt für Buchungen ohne Kategorie eine Kategorie vor, deren Name (oder ein Wort davon) im Text vorkommt. */
+async function autoAssign(mon) {
+  const pot = mon.pot;
+  // Ganzer Kategoriename (ab 3 Zeichen) oder einzelne Wörter daraus (ab 4 Zeichen), jeweils als ganzes Wort
+  const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const words = pot.lines.map((l) => {
+    const keys = [l.name.trim(), ...l.name.split(/[\s,/–-]+/).filter((w) => w.length >= 4)].filter((w) => w.length >= 3);
+    return { name: l.name, res: [...new Set(keys)].map((k) => new RegExp('(^|[^\\p{L}])' + esc(k) + '($|[^\\p{L}])', 'iu')) };
+  });
+  const txs = state.data.transactions.filter((t) => t.pot === pot.key && !t.cat && t.date.startsWith(state.year + '-'));
+  const proposals = [];
+  for (const t of txs) {
+    const note = t.note || '';
+    const hit = words.find((w) => w.res.some((re) => re.test(note)));
+    if (hit) proposals.push({ t, cat: hit.name });
+  }
+  if (!proposals.length) {
+    toast('Keine passenden Kategorien im Text gefunden. Nutze im Tab Erfassen «Auswählen», um Buchungen von Hand zuzuordnen.', { duration: 6000 });
+    return;
+  }
+  const keep = new Set(proposals.map((p) => p.t.id));
+  const body = h('div', null,
+    h('p', null, `${proposals.length} von ${txs.length} Buchungen ohne Kategorie können zugeordnet werden:`),
+    h('ul', { class: 'auto-list' }, proposals.map((p) => h('li', null,
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: true, onchange: (e) => (e.target.checked ? keep.add(p.t.id) : keep.delete(p.t.id)) }),
+        h('span', null, p.t.note || '–'), h('span', { class: 'muted' }, ' → ' + p.cat), h('span', { class: 'num' }, fmt(p.t.amount)))))));
+  const ok = await modal('Automatisch zuordnen', body, [{ label: 'Abbrechen', value: false }, { label: 'Zuordnen', primary: true, value: true }]);
+  if (!ok) return;
+  let n = 0;
+  for (const cat of new Set(proposals.map((p) => p.cat))) {
+    n += await bulkAssign(proposals.filter((p) => p.cat === cat && keep.has(p.t.id)).map((p) => p.t.id), pot.key, cat);
+  }
+  toast(`${n} Buchungen zugeordnet`);
+  render();
 }
 
 function plannedCard(today) {

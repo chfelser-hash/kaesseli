@@ -18,6 +18,8 @@ const form = {
 };
 let month = null;
 let filterPot = '';
+let selectMode = false; // Mehrfachauswahl in der Buchungsliste
+const selected = new Set();
 let filterCat = null; // Kategorie-Filter (z.B. «Geschenke»), null = alle
 let filterAcc = null; // null = alle, '' = ohne Angabe
 let accOpen = true;
@@ -382,7 +384,7 @@ function monthPanel() {
     oninput: (e) => { search = e.target.value; listWrap.replaceChildren(list()); },
   });
 
-  const list = () => {
+  const visibleRows = () => {
     let rows = txMonth;
     if (filterPot) rows = rows.filter((t) => t.pot === filterPot);
     if (filterCat !== null) rows = rows.filter((t) => (t.cat || '') === filterCat);
@@ -391,7 +393,10 @@ function monthPanel() {
       const q = search.toLowerCase();
       rows = rows.filter((t) => `${t.note} ${t.cat} ${t.account} ${fmt(t.amount)}`.toLowerCase().includes(q));
     }
-    rows = [...rows].sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return [...rows].sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
+  };
+  const list = () => {
+    const rows = visibleRows();
     if (!rows.length) return h('p', { class: 'empty' }, txMonth.length ? 'Keine Treffer.' : isRange ? 'Keine Buchungen in diesem Zeitraum.' : isYear ? 'Keine Buchungen in diesem Jahr.' : 'Noch keine Buchungen in diesem Monat.');
 
     const groups = filterPot ? [[filterPot, rows]] : pots.map((p) => [p.key, rows.filter((t) => t.pot === p.key)]).filter(([, r]) => r.length);
@@ -407,7 +412,11 @@ function monthPanel() {
       return h('section', { class: 'tx-group' },
         h('header', { style: { '--c': pot?.color || '#888' } }, h('span', { class: 'dot' }), h('strong', null, pot?.name || 'Andere'), h('span', { class: 'sum' }, fmt(sum))),
         h('ul', { class: 'tx-list' }, items.map((t) =>
-          h('li', null, h('button', { class: 'tx' + (t.date > today ? ' planned' : ''), onclick: () => editTx(t) },
+          h('li', null, h('button', {
+            class: 'tx' + (t.date > today ? ' planned' : '') + (selectMode ? ' selectable' : '') + (selected.has(t.id) ? ' sel' : ''),
+            onclick: () => { if (!selectMode) return editTx(t); selected.has(t.id) ? selected.delete(t.id) : selected.add(t.id); render(); },
+          },
+            selectMode ? h('span', { class: 'tx-check', 'aria-hidden': 'true' }, selected.has(t.id) ? '✓' : '') : null,
             h('span', { class: 'tx-date' }, fmtDateShort(t.date), isRange && t.time ? h('small', null, t.time) : null),
             h('span', { class: 'tx-main' },
               h('span', { class: 'tx-note' }, t.note || t.cat || pot?.name || '–'),
@@ -421,6 +430,27 @@ function monthPanel() {
   };
   const listWrap = h('div', { class: 'tx-wrap' }, list());
 
+  // Mehrfachauswahl: mehreren Buchungen auf einmal Topf/Kategorie zuweisen
+  let target = '';
+  const bulkBar = selectMode ? h('div', { class: 'bulk-select' },
+    h('span', { class: 'strong' }, `${selected.size} ausgewählt`),
+    h('button', { class: 'link', onclick: () => { visibleRows().forEach((t) => selected.add(t.id)); render(); } }, 'alle sichtbaren'),
+    selected.size ? h('button', { class: 'link', onclick: () => { selected.clear(); render(); } }, 'keine') : null,
+    h('select', { 'aria-label': 'Ziel', onchange: (e) => (target = e.target.value) },
+      h('option', { value: '' }, 'Kategorie setzen …'),
+      pots.map((p) => h('optgroup', { label: p.name },
+        h('option', { value: p.key + '|' }, `${p.name} (ohne Kategorie)`),
+        p.lines.length > 1 ? p.lines.map((l) => h('option', { value: p.key + '|' + l.name }, `${p.name} › ${l.name}`)) : null))),
+    h('button', { class: 'btn primary', disabled: !selected.size, onclick: async () => {
+      if (!target) return toast('Bitte Topf/Kategorie wählen', { error: true });
+      const [pot, cat] = [target.slice(0, target.indexOf('|')), target.slice(target.indexOf('|') + 1)];
+      const n = await bulkAssign([...selected], pot, cat);
+      selected.clear();
+      selectMode = false;
+      render();
+      toast(`${n} Buchungen zugeordnet`);
+    } }, 'Zuordnen')) : null;
+
   return h('section', { class: 'card month' },
     head,
     pots.length ? (isRange ? rangeTiles : tiles) : h('p', { class: 'empty' }, isRange ? 'Für diesen Zeitraum gibt es kein Budget.' : `Für ${isYear ? view.year : y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
@@ -428,8 +458,10 @@ function monthPanel() {
     isRange ? h('p', { class: 'hint period' }, `${periodLabel} · ${txMonth.length === 1 ? '1 Buchung' : txMonth.length + ' Buchungen'} · Total CHF ${fmt(txMonth.reduce((a, t) => a + t.amount, 0))}`) : null,
     accountTable(txMonth, yearBudget),
     h('div', { class: 'list-tools' }, searchInput,
+      h('button', { class: 'chip' + (selectMode ? ' on' : ''), title: 'Mehrere Buchungen auswählen und gemeinsam zuordnen', onclick: () => { selectMode = !selectMode; selected.clear(); render(); } }, selectMode ? 'Auswahl beenden' : 'Auswählen'),
       filterPot || filterAcc !== null || filterCat !== null ? h('button', { class: 'chip on', onclick: () => { filterPot = ''; filterAcc = null; filterCat = null; render(); } },
         filterCat !== null ? `${filterCat || 'Ohne Kategorie'} ✕` : 'Filter ✕') : null),
+    bulkBar,
     listWrap
   );
 }
@@ -444,10 +476,28 @@ function catSummary(tx, pot, cat, today) {
   const rest = budget - done - planned;
   return h('div', { class: 'cat-summary', style: { '--c': pot?.color || '#888' } },
     h('strong', null, `${pot?.name || ''} · ${cat || 'Ohne Kategorie'}`),
-    h('span', null, `Budget ${fmt0(budget)}`),
+    budget ? h('span', null, `Budget ${fmt0(budget)}`) : h('span', { class: 'muted' }, 'ohne eigenes Budget'),
     h('span', null, `bisher ${fmt0(done)}`),
     planned ? h('span', null, `geplant ${fmt0(planned)}`) : null,
-    h('span', { class: rest < 0 ? 'neg' : 'pos' }, `${rest < 0 ? 'überzogen' : 'verbleibend'} ${fmt0(Math.abs(rest))}`));
+    budget ? h('span', { class: rest < 0 ? 'neg' : 'pos' }, `${rest < 0 ? 'überzogen' : 'verbleibend'} ${fmt0(Math.abs(rest))}`) : h('span', { class: 'strong' }, `Total ${fmt0(done + planned)}`));
+}
+
+/** Weist mehreren Buchungen Topf und Kategorie zu (nutzt die normale Speicher-Schnittstelle). */
+export async function bulkAssign(ids, pot, cat) {
+  let n = 0;
+  for (const id of ids) {
+    const i = state.data.transactions.findIndex((t) => t.id === id);
+    if (i < 0) continue;
+    try {
+      const res = await api('PUT', '/api/tx/' + id, { ...state.data.transactions[i], pot, cat });
+      state.data.transactions[i] = res.tx;
+      n++;
+    } catch (e) {
+      toast(e.message, { error: true });
+      break;
+    }
+  }
+  return n;
 }
 
 // ---------- Abrechnen ----------

@@ -471,3 +471,18 @@ table.cats .go-col { color: var(--ink-3); width: 1.5rem; text-align: right; }
 table.lines td.center, table.lines th.center { text-align: center; }
 
 .facts .strong { font-weight: 700; }
+
+/* Mehrfachauswahl */
+.bulk-select { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: center; padding: .6rem .7rem; margin-top: .5rem; border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, var(--card)); position: sticky; top: 3.8rem; z-index: 5; }
+.bulk-select select { width: auto; max-width: 100%; }
+.bulk-select .strong { font-weight: 700; }
+.tx.selectable { grid-template-columns: 1.4rem 3.4rem 1fr auto; }
+.uebersicht .tx.selectable { grid-template-columns: 1.4rem 6rem 1fr auto; }
+.tx-check { width: 1.2rem; height: 1.2rem; border: 2px solid var(--ink-3); border-radius: 5px; display: grid; place-items: center; font-size: .8rem; font-weight: 800; color: #fff; }
+.tx.sel { background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
+.tx.sel .tx-check { background: var(--accent); border-color: var(--accent); }
+.bar.neutral > span { background: var(--plan); }
+.auto-list { list-style: none; padding: 0; margin: .5rem 0 0; max-height: 50vh; overflow: auto; }
+.auto-list li { padding: .3rem 0; border-bottom: 1px solid var(--line-2); }
+.auto-list label { display: grid; grid-template-columns: auto 1fr auto auto; gap: .5rem; align-items: center; color: var(--ink); }
+.strong { font-weight: 700; }
