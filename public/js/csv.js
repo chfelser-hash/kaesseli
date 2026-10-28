@@ -245,30 +245,40 @@ const hasLetters = (s) => /[A-Za-zÄÖÜäöüéèà]{2,}/.test(s);
 export function parsePastedText(text, today = new Date()) {
   const out = [];
   let curDate = null;
-  let buffer = [];
-  for (let raw of text.split(/\r?\n/)) {
-    let line = raw.replace(/\t+/g, '  ').trim();
+  let buffer = []; // Textzeilen seit der letzten Transaktion (Händler, Kategorie …)
+  let place = ''; // Ort aus der Datumszeile («26.10.2026 18:11 Musterdorf»)
+  const reset = () => { buffer = []; place = ''; };
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // Markdown-Links [Text](url) → Text
+      .replace(/^\s*[*\-•]\s+/, '') // Aufzählungszeichen
+      .replace(/\t+/g, '  ')
+      .trim();
     if (!line) continue;
-    if (NOISE.test(line)) { buffer = []; continue; }
+    // Kartenzeile «••••1234 NAME» beginnt eine neue Transaktion
+    if (/^[•*●·]{3,}\s*\d{4}/.test(line)) { reset(); continue; }
+    if (NOISE.test(line)) { reset(); continue; }
     const d = findDateInLine(line, today);
     if (d) {
       curDate = d.date;
-      line = d.rest.trim();
+      line = d.rest.replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, ' ').trim();
       if (!findAmountInLine(line)) {
-        buffer = hasLetters(line) && !STATUS.test(clean(line)) ? [clean(line)] : [];
+        // Rest der Datumszeile ist der Ort; der Händler steht davor im Puffer
+        if (hasLetters(line) && !STATUS.test(clean(line))) place = clean(line);
         continue;
       }
     }
     const a = findAmountInLine(line);
-    // Betrag in Fremdwährung (z.B. «EUR 45.00»): der CHF-Betrag folgt separat → Zeile überspringen
+    // Nur Betrag in Fremdwährung (z.B. «EUR 45.00»): der CHF-Betrag folgt separat → Zeile überspringen
     if (a && /\b(EUR|USD|GBP|THB|IDR|JPY|EGP|AUD|CAD|SEK|NOK|DKK)\b/.test(line) && !/CHF/.test(line)) continue;
     if (a) {
-      if (!curDate) { buffer = []; continue; }
+      if (!curDate) { reset(); continue; }
       let label = clean(a.rest);
       if (!hasLetters(label) || STATUS.test(label)) label = buffer.slice(0, 2).join(' – ');
+      if (place && !label.toLowerCase().includes(place.toLowerCase())) label = label ? `${label}, ${place}` : place;
       const credit = a.credit || CREDIT.test(label);
       out.push({ date: curDate, text: label, amount: credit ? -a.value : a.value });
-      buffer = [];
+      reset();
     } else if (hasLetters(line) && !STATUS.test(clean(line))) {
       buffer.push(clean(line));
       if (buffer.length > 3) buffer.shift();

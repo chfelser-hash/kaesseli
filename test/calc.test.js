@@ -99,3 +99,40 @@ test('Eingefügter Text: Datumsüberschriften, Händler über Betrag, Gutschrift
   assert.ok(r[1].text.startsWith('SBB CFF FFS'));
   assert.equal(r[2].text, 'Amazon Marketplace');
 });
+
+test('Eingefügter Text: Format Viseca One (Karte, Händler, Datum+Ort, Betrag)', () => {
+  // Frei erfundene Beispieldaten im Aufbau der Viseca-One-Liste
+  const today = new Date(2026, 9, 28);
+  const txt = `Transaktionen
+Alle KartenVisa **** 1111 CHF Person AVisa **** 2222 CHF Person B
+Betrag
+von
+bis
+Oktober
+[••••2222PERSON B](https://example.com/1)
+[Laden Alpha](https://example.com/1)
+[27.10.2026 07:41](https://example.com/1)
+12.30  CHF
+[Ihre Zahlung - Danke](https://example.com/2)
+[26.10.2026](https://example.com/2)
+[+ 1'000.00  CHF](https://example.com/2)
+[••••2222PERSON B](https://example.com/3)
+[Laden Beta](https://example.com/3)
+[26.10.2026 18:11 Musterdorf](https://example.com/3)
+[45.60  CHF](https://example.com/3)
+••••1111PERSON A
+onlineshop.example
+24.10.2026 09:06
+50.00  CHF52.00  EUR
+* 1
+* 2
+Hinweis:
+Der Devisenkurs ist provisorisch.`;
+  const r = parsePastedText(txt, today);
+  assert.deepEqual(r.map((x) => [x.date, x.text, x.amount]), [
+    ['2026-10-27', 'Laden Alpha', 12.3],
+    ['2026-10-26', 'Ihre Zahlung - Danke', -1000],
+    ['2026-10-26', 'Laden Beta, Musterdorf', 45.6],
+    ['2026-10-24', 'onlineshop.example', 50],
+  ]);
+});
