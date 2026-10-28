@@ -486,3 +486,6 @@ table.lines td.center, table.lines th.center { text-align: center; }
 .auto-list li { padding: .3rem 0; border-bottom: 1px solid var(--line-2); }
 .auto-list label { display: grid; grid-template-columns: auto 1fr auto auto; gap: .5rem; align-items: center; color: var(--ink); }
 .strong { font-weight: 700; }
+
+.orphan-hint { color: var(--neg); margin-left: .3rem; }
+.btn.small { min-height: 30px; padding: .2rem .6rem; font-size: .82rem; }

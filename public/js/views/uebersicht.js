@@ -161,16 +161,23 @@ function categoryCard(mon) {
         h('tbody', null, rows.map((r) => {
           // Kategorie ohne eigenes Budget (Betrag 0): nur gruppieren, nicht als überzogen markieren
           const noBudget = !r.unbudgeted && r.yearly === 0;
+          const orphan = r.unbudgeted && r.key !== ''; // Kategorie gibt es im Budget nicht (mehr), z.B. nach Umbenennen
+          const dash = noBudget || r.unbudgeted;
           const potSpent = tot.actual + tot.planned || 1;
           const used = noBudget ? (r.actual + r.planned) / potSpent : r.yearly > 0 ? (r.actual + r.planned) / r.yearly : r.actual + r.planned > 0 ? 1.01 : 0;
           const open = () => go('erfassen', { year: state.year, pot: mon.pot.key, cat: r.key });
           return h('tr', { class: 'clickable' + (r.unbudgeted ? ' unbudgeted' : ''), title: `Alle Buchungen «${r.name}» ${state.year} anzeigen`, onclick: open },
-            h('td', null, h('button', { class: 'link cat-link', onclick: (e) => { e.stopPropagation(); open(); } }, r.name), h('small', { class: 'muted' }, r.count ? ` (${r.count})` : '')),
-            h('td', { class: 'num' + (noBudget ? ' muted' : '') }, noBudget ? '–' : fmt0(r.yearly)),
+            h('td', null, h('button', { class: 'link cat-link', onclick: (e) => { e.stopPropagation(); open(); } }, r.name), h('small', { class: 'muted' }, r.count ? ` (${r.count})` : ''),
+              orphan ? h('small', { class: 'orphan-hint' }, ' nicht im Budget') : null),
+            h('td', { class: 'num' + (dash ? ' muted' : '') }, dash ? '–' : fmt0(r.yearly)),
             h('td', { class: 'num' }, fmt0(r.actual)),
             h('td', { class: 'num muted' }, r.planned ? fmt0(r.planned) : ''),
-            h('td', { class: 'num ' + (noBudget ? 'muted' : rest(r) < 0 ? 'neg' : '') }, noBudget ? '–' : fmt0(rest(r))),
-            h('td', { class: 'bar-col' }, h('span', { class: 'bar' + (noBudget ? ' neutral' : used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } }))),
+            h('td', { class: 'num ' + (dash ? 'muted' : rest(r) < 0 ? 'neg' : '') }, dash ? '–' : fmt0(rest(r))),
+            h('td', { class: 'bar-col' },
+              orphan
+                ? h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); reassign(mon, r.key, r.name); } }, 'zuordnen …')
+                : dash ? null
+                  : h('span', { class: 'bar' + (used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } }))),
             h('td', { class: 'go-col' }, '→')
           );
         })),
@@ -178,6 +185,21 @@ function categoryCard(mon) {
       )
     )
   );
+}
+
+/** Alle Buchungen einer (nicht mehr budgetierten) Kategorie einer anderen Kategorie zuweisen. */
+async function reassign(mon, fromKey, fromName) {
+  const pot = mon.pot;
+  const ids = state.data.transactions.filter((t) => t.pot === pot.key && (t.cat || '') === fromKey && t.date.startsWith(state.year + '-')).map((t) => t.id);
+  let target = pot.lines[0]?.name || '';
+  const ok = await modal(`«${fromName}» zuordnen`, h('div', null,
+    h('p', null, `${ids.length} Buchung${ids.length === 1 ? '' : 'en'} ${state.year} erhalten diese Kategorie:`),
+    h('label', null, 'Kategorie', h('select', { onchange: (e) => (target = e.target.value) }, pot.lines.map((l) => h('option', { value: l.name }, l.name))))
+  ), [{ label: 'Abbrechen', value: false }, { label: 'Zuordnen', primary: true, value: true }]);
+  if (!ok || !target) return;
+  const n = await bulkAssign(ids, pot.key, target);
+  toast(`${n} Buchung${n === 1 ? '' : 'en'} → ${target}`);
+  render();
 }
 
 /** Schlägt für Buchungen ohne Kategorie eine Kategorie vor, deren Name (oder ein Wort davon) im Text vorkommt. */
