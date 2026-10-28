@@ -1,5 +1,6 @@
 # Persönliche Daten – niemals ins Repo!
-data/
+data/*
+!data/.gitkeep
 *.xlsx
 *.xls
 *.xlsm
