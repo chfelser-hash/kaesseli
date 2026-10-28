@@ -96,14 +96,17 @@ function linesCard(title, lines, opts = {}) {
     totalY.textContent = fmt(lines.reduce((a, l) => a + lineYearly(l), 0));
   });
   const table = h('table', { class: 'lines' },
-    h('thead', null, h('tr', null, h('th', null, 'Posten'), h('th', null, 'Betrag'), h('th', null, 'Rhythmus'), h('th', { class: 'num' }, 'pro Monat'), h('th', { class: 'num' }, 'pro Jahr'), opts.income ? null : h('th', { class: 'center', title: 'Geht auf ein Sparkonto (z.B. Säule 3a) und zählt in der Zusammenfassung zum Sparen' }, 'Sparen'), h('th'))),
+    h('thead', null, h('tr', null, h('th', null, 'Posten'), h('th', null, 'Betrag'), h('th', null, 'Rhythmus'), h('th', { class: 'num' }, 'pro Monat'), h('th', { class: 'num' }, 'pro Jahr'), noSavingCol(opts) ? null : h('th', { class: 'center', title: 'Geht auf ein Sparkonto (z.B. Säule 3a) und zählt in der Zusammenfassung zum Sparen' }, 'Sparen'), h('th'))),
     body,
-    h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('td'), h('td'), h('td', { class: 'num' }, totalM), h('td', { class: 'num' }, totalY), opts.income ? null : h('td'), h('td')))
+    h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('td'), h('td'), h('td', { class: 'num' }, totalM), h('td', { class: 'num' }, totalY), noSavingCol(opts) ? null : h('td'), h('td')))
   );
   const add = h('button', { class: 'link', onclick: () => { lines.push({ id: rid(), name: '', expr: '0', freq: 12 }); rebuild(); changed(); body.lastChild?.querySelector('input')?.focus(); } }, '+ Posten');
   if (opts.embed) return h('div', null, h('div', { class: 'table-scroll' }, table), add);
   return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, title)), h('div', { class: 'table-scroll' }, table), add);
 }
+
+// Spalte «Sparen» nur bei Ausgaben-Töpfen (beim Einkommen und in Sparziel-Töpfen sinnlos)
+const noSavingCol = (opts) => opts.income || opts.pot?.kind === 'saving';
 
 function lineRow(l, i, lines, rebuild, opts) {
   const m = h('td', { class: 'num' });
@@ -130,7 +133,7 @@ function lineRow(l, i, lines, rebuild, opts) {
     h('td', null, h('select', { 'aria-label': 'Rhythmus', onchange: (e) => { l.freq = Number(e.target.value); changed(); } },
       FREQS.filter((f) => opts.income || f.v !== 13).map((f) => h('option', { value: f.v, selected: f.v === Number(l.freq) }, f.label)))),
     m, y,
-    opts.income ? null : h('td', { class: 'center' }, h('input', { type: 'checkbox', checked: !!l.saving, 'aria-label': 'Sparen', title: 'Geht auf ein Sparkonto (z.B. Säule 3a)', onchange: (e) => { l.saving = e.target.checked; changed(); } })),
+    noSavingCol(opts) ? null : h('td', { class: 'center' }, h('input', { type: 'checkbox', checked: !!l.saving, 'aria-label': 'Sparen', title: 'Geht auf ein Sparkonto (z.B. Säule 3a)', onchange: (e) => { l.saving = e.target.checked; changed(); } })),
     h('td', { class: 'row-actions' },
       h('button', { class: 'icon-btn sm', title: 'Nach oben', disabled: i === 0, onclick: () => { [lines[i - 1], lines[i]] = [lines[i], lines[i - 1]]; rebuild(); changed(); } }, '↑'),
       h('button', { class: 'icon-btn sm', title: 'Entfernen', onclick: () => { lines.splice(i, 1); rebuild(); changed(); } }, '✕')
@@ -179,11 +182,11 @@ function potCard(p, idx) {
     ),
     h('div', { class: 'pot-opts' },
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: p.tracked, onchange: (e) => { p.tracked = e.target.checked; changed(); } }), ' Ausgaben erfassen & überwachen'),
-      h('label', null, 'Art ', h('select', { onchange: (e) => { p.kind = e.target.value; changed(); } },
+      h('label', null, 'Art ', h('select', { onchange: (e) => { p.kind = e.target.value; if (p.kind === 'saving') { p.carryover = 0; p.lines.forEach((l) => delete l.saving); } changed(); render(); } },
         h('option', { value: 'expense', selected: p.kind !== 'saving' }, 'Ausgaben'),
         h('option', { value: 'saving', selected: p.kind === 'saving' }, 'Sparziel'))),
       h('label', null, 'Konto ', h('input', { class: 'short', value: p.account, oninput: (e) => { p.account = e.target.value; changed(); } })),
-      h('label', { title: 'Saldo aus dem Vorjahr (z.B. Ferienkonto)' }, 'Übertrag ', h('input', { class: 'short num', inputmode: 'decimal', value: p.carryover || 0, oninput: (e) => { p.carryover = evalExpr(e.target.value) || 0; changed(); } }))
+      p.kind === 'saving' ? null : h('label', { title: 'Saldo aus dem Vorjahr (z.B. Ferienkonto)' }, 'Übertrag ', h('input', { class: 'short num', inputmode: 'decimal', value: p.carryover || 0, oninput: (e) => { p.carryover = evalExpr(e.target.value) || 0; changed(); } }))
     ),
     linesCard('', p.lines, { embed: true, pot: p })
   );
