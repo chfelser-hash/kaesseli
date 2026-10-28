@@ -219,37 +219,68 @@ function summaryCard() {
   calcFns.push(() => {
     const c = cashflow(draft);
     const mb = c.monthBalance, yb = c.yearBalance;
-    // Fazit in einem Satz
     let cls, text;
-    if (yb < -0.5) { cls = 'bad'; text = `Geht nicht auf: Übers Jahr fehlen ${fmt0(-yb)}.`; }
-    else if (mb < -0.5 && c.incomeExtra > 0) { cls = 'warn'; text = `Geht auf – aber nur dank ${c.extras.every((e) => e.name.includes('13.')) ? 'dem 13. Lohn' : 'den Einmalzahlungen'}: Jeden Monat fehlen ${fmt0(-mb)}, übers Jahr bleiben ${fmt0(yb)}.`; }
+    if (c.hasSaving) {
+      // Sparen = was am Ende des Zyklus übrig bleibt → Vergleich mit dem Sparziel
+      const diff = c.savingYearly - c.savingTargetYearly;
+      if (c.savingMonthly < -0.5) { cls = 'bad'; text = `Jeden Monat fehlen ${fmt0(-c.savingMonthly)} – schon ohne Sparen reicht der Lohn nicht.`; }
+      else if (diff >= -0.5) { cls = 'good'; text = `Sparziel erreichbar: ${fmt0(c.savingYearly)} von ${fmt0(c.savingTargetYearly)} im Jahr (${signed(diff)}).`; }
+      else { cls = 'warn'; text = `Sparziel nicht erreichbar: ${fmt0(c.savingYearly)} von ${fmt0(c.savingTargetYearly)} im Jahr (${signed(diff)}).`; }
+    } else if (yb < -0.5) { cls = 'bad'; text = `Geht nicht auf: Übers Jahr fehlen ${fmt0(-yb)}.`; }
+    else if (mb < -0.5 && c.incomeExtra > 0) { cls = 'warn'; text = `Geht auf – aber nur dank dem 13. Lohn: Jeden Monat fehlen ${fmt0(-mb)}, übers Jahr bleiben ${fmt0(yb)}.`; }
     else if (mb < -0.5) { cls = 'bad'; text = `Jeden Monat fehlen ${fmt0(-mb)}.`; }
     else { cls = 'good'; text = `Geht auf: Jeden Monat bleiben ${fmt0(mb)}, übers Jahr ${fmt0(yb)}.`; }
     verdict.className = 'verdict ' + cls;
     verdict.replaceChildren(h('span', { class: 'verdict-icon' }, cls === 'good' ? '✓' : cls === 'warn' ? '!' : '✕'), h('span', null, text));
 
-    steps.replaceChildren(
-      step('1 · Jeden Monat', 'Lohn, der jeden Monat kommt, gegen alles, was jeden Monat auf die Konten muss.', [
-        row('Lohn', c.incomeMonthly, 'in'),
-        row('Überweisungen auf die Konten', -c.outMonthly, 'out'),
-      ], row(mb < 0 ? 'fehlen pro Monat' : 'bleiben pro Monat', mb, 'result ' + (mb < -0.5 ? 'neg' : 'pos'))),
-      step('2 · Einmal im Jahr', c.extras.length ? 'Zusätzliche Zahlungen gleichen die Monate aus.' : 'Keine Einmalzahlungen budgetiert.', [
-        ...c.extras.map((e) => row(e.name, e.amount, 'in')),
-        row(mb < 0 ? '12 Monate Fehlbetrag' : '12 Monate Überschuss', mb * 12, mb < 0 ? 'out' : 'in'),
-      ], row('bleiben nach Ausgleich', yb, 'result ' + (yb < -0.5 ? 'neg' : 'pos'))),
-      step('3 · Ganzes Jahr', 'Kontrolle: Jahreseinkommen gegen alle Jahresausgaben.', [
-        row('Einkommen im Jahr', c.incomeYearly, 'in'),
-        row('Ausgaben im Jahr', -c.outYearly, 'out'),
-      ], row(yb < 0 ? 'fehlen im Jahr' : `Reserve im Jahr${c.incomeYearly ? ` (${Math.round((yb / c.incomeYearly) * 1000) / 10} %)` : ''}`, yb, 'result ' + (yb < -0.5 ? 'neg' : 'pos')))
-    );
+    if (c.hasSaving) {
+      const sm = c.savingMonthly;
+      const diff = c.savingYearly - c.savingTargetYearly;
+      steps.replaceChildren(
+        step('1 · Jeden Monat', 'Was nach allen Überweisungen am Ende des Zyklus übrig bleibt, geht aufs Sparkonto.', [
+          row('Lohn', c.incomeMonthly, 'in'),
+          row('Überweisungen ohne Sparen', -c.spendMonthly, 'out'),
+        ], h('div', null,
+          row('bleibt fürs Sparen', sm, 'result ' + (sm < -0.5 ? 'neg' : sm < c.savingTargetMonthly - 0.5 ? 'short' : 'pos')),
+          h('p', { class: 'hint target' }, `Ziel ${fmt0(c.savingTargetMonthly)} pro Monat`))),
+        step('2 · Einmal im Jahr', c.extras.length ? 'Geht vollständig aufs Sparkonto.' : 'Keine Einmalzahlungen budgetiert.', [
+          ...c.extras.map((e) => row(e.name, e.amount, 'in')),
+        ], row('zusätzlich fürs Sparen', c.incomeExtra, 'result ' + (c.incomeExtra > 0.5 ? 'pos' : ''))),
+        step('3 · Sparen im Jahr', 'Monatlicher Rest × 12 plus Einmalzahlungen gegen das Sparziel.', [
+          row(`12 × ${fmt0(sm)} + ${fmt0(c.incomeExtra)}`, c.savingYearly, 'in'),
+          row('Sparziel', -c.savingTargetYearly, 'out'),
+        ], row(diff < -0.5 ? 'unter dem Ziel' : 'über dem Ziel', diff, 'result ' + (diff < -0.5 ? 'neg' : 'pos')))
+      );
+    } else {
+      steps.replaceChildren(
+        step('1 · Jeden Monat', 'Lohn, der jeden Monat kommt, gegen alles, was jeden Monat auf die Konten muss.', [
+          row('Lohn', c.incomeMonthly, 'in'),
+          row('Überweisungen auf die Konten', -c.outMonthly, 'out'),
+        ], row(mb < 0 ? 'fehlen pro Monat' : 'bleiben pro Monat', mb, 'result ' + (mb < -0.5 ? 'neg' : 'pos'))),
+        step('2 · Einmal im Jahr', c.extras.length ? 'Zusätzliche Zahlungen gleichen die Monate aus.' : 'Keine Einmalzahlungen budgetiert.', [
+          ...c.extras.map((e) => row(e.name, e.amount, 'in')),
+          row(mb < 0 ? '12 Monate Fehlbetrag' : '12 Monate Überschuss', mb * 12, mb < 0 ? 'out' : 'in'),
+        ], row('bleiben nach Ausgleich', yb, 'result ' + (yb < -0.5 ? 'neg' : 'pos'))),
+        step('3 · Ganzes Jahr', 'Kontrolle: Jahreseinkommen gegen alle Jahresausgaben.', [
+          row('Einkommen im Jahr', c.incomeYearly, 'in'),
+          row('Ausgaben im Jahr', -c.outYearly, 'out'),
+        ], row(yb < 0 ? 'fehlen im Jahr' : 'Reserve im Jahr', yb, 'result ' + (yb < -0.5 ? 'neg' : 'pos')))
+      );
+    }
 
-    tbody.replaceChildren(...c.pots.map((p) => h('tr', { style: { '--c': p.color } },
-      h('th', null, h('span', { class: 'dot' }), p.name, p.account ? h('small', { class: 'muted' }, ' → ' + p.account) : null),
-      h('td', { class: 'num' }, p.running ? fmt0(p.running) : '–'),
-      h('td', { class: 'num' }, p.reserve ? fmt0(p.reserve) : '–'),
-      h('td', { class: 'num strong' }, fmt0(p.monthly)),
-      h('td', { class: 'num muted' }, fmt0(p.yearly)))));
-    tfoot.replaceChildren(h('tr', null, h('th', null, 'Total'), h('td', { class: 'num' }, fmt0(c.runningTotal)), h('td', { class: 'num' }, fmt0(c.reserveTotal)), h('td', { class: 'num' }, fmt0(c.outMonthly)), h('td', { class: 'num' }, fmt0(c.outYearly))));
+    const potRow = (p, saving) => h('tr', { class: saving ? 'saving' : '', style: { '--c': p.color } },
+      h('th', null, h('span', { class: 'dot' }), p.name, p.account ? h('small', { class: 'muted' }, ' → ' + p.account) : null,
+        saving ? h('small', { class: 'tag-rest' }, 'Rest am Zyklusende') : null),
+      h('td', { class: 'num' }, saving ? '' : p.running ? fmt0(p.running) : '–'),
+      h('td', { class: 'num' }, saving ? '' : p.reserve ? fmt0(p.reserve) : '–'),
+      h('td', { class: 'num strong' }, saving ? `Ziel ${fmt0(p.monthly)}` : fmt0(p.monthly)),
+      h('td', { class: 'num muted' }, saving ? `Ziel ${fmt0(p.yearly)}` : fmt0(p.yearly)));
+    const spend = c.hasSaving ? c.spendPots : c.pots;
+    const tot = (k) => spend.reduce((a, p) => a + p[k], 0);
+    tbody.replaceChildren(...spend.map((p) => potRow(p, false)));
+    tfoot.replaceChildren(
+      h('tr', null, h('th', null, c.hasSaving ? 'Total Überweisungen' : 'Total'), h('td', { class: 'num' }, fmt0(tot('running'))), h('td', { class: 'num' }, fmt0(tot('reserve'))), h('td', { class: 'num' }, fmt0(tot('monthly'))), h('td', { class: 'num' }, fmt0(tot('yearly')))),
+      ...(c.hasSaving ? c.savingPots.map((p) => potRow(p, true)) : []));
   });
 
   return h('section', { class: 'card summary' },

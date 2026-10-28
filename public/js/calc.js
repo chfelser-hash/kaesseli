@@ -248,9 +248,21 @@ export function cashflow(y) {
   const outYearly = pots.reduce((a, p) => a + p.yearly, 0);
   const monthBalance = incomeMonthly - outMonthly;
   const incomeYearly = incomeMonthly * 12 + incomeExtra;
+  // Sparen = Rest am Ende des Abrechnungszyklus; das Budget ist dort das Ziel
+  const savingKeys = new Set(y.pots.filter((p) => p.kind === 'saving').map((p) => p.key));
+  const spendPots = pots.filter((p) => !savingKeys.has(p.key));
+  const savingPots = pots.filter((p) => savingKeys.has(p.key));
+  const spendMonthly = spendPots.reduce((a, p) => a + p.monthly, 0);
+  const spendYearly = spendPots.reduce((a, p) => a + p.yearly, 0);
+  const savingTargetMonthly = savingPots.reduce((a, p) => a + p.monthly, 0);
+  const savingTargetYearly = savingPots.reduce((a, p) => a + p.yearly, 0);
+  const savingMonthly = incomeMonthly - spendMonthly; // bleibt jeden Monat fürs Sparen
+  const savingYearly = savingMonthly * 12 + incomeExtra; // inkl. 13. Lohn
   return {
     incomeMonthly, extras, incomeExtra, pots, outMonthly, outYearly, monthBalance,
     incomeYearly, yearBalance: incomeYearly - outYearly,
+    hasSaving: savingPots.length > 0, savingPots, spendPots, spendMonthly, spendYearly,
+    savingTargetMonthly, savingTargetYearly, savingMonthly, savingYearly,
     runningTotal: pots.reduce((a, p) => a + p.running, 0),
     reserveTotal: pots.reduce((a, p) => a + p.reserve, 0),
   };

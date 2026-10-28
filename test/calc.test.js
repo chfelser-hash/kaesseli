@@ -198,3 +198,18 @@ test('Geldfluss: Monat, 13. Lohn, Jahr', () => {
   assert.equal(c.monthBalance, -100);
   assert.equal(c.yearBalance, 1500 * 13 - 1600 * 12); // 300
 });
+
+test('Geldfluss: Sparen als Rest am Zyklusende', () => {
+  const y = {
+    income: [{ name: 'Lohn', expr: '1000', freq: 13 }],
+    pots: [
+      { key: 'a', name: 'Fix', lines: [{ name: 'Miete', expr: '700', freq: 12 }] },
+      { key: 's', name: 'Sparen', kind: 'saving', lines: [{ name: 'Sparen', expr: '400', freq: 12 }] },
+    ],
+  };
+  const c = cashflow(y);
+  assert.equal(c.savingMonthly, 300); // 1000 - 700
+  assert.equal(c.savingYearly, 300 * 12 + 1000);
+  assert.equal(c.savingTargetYearly, 4800);
+  assert.equal(c.savingYearly - c.savingTargetYearly, c.yearBalance);
+});
