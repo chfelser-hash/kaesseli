@@ -51,6 +51,9 @@ export async function api(method, url, body) {
 
 export async function reload() {
   state.data = await api('GET', '/api/data');
+  // Fehlende Listen ergänzen (z.B. bei älteren oder frisch angelegten Datenständen)
+  state.data.settlements ||= [];
+  state.data.transactions ||= [];
   const years = yearList();
   if (!state.year || !state.data.years[state.year]) {
     const cur = Number(todayStr().slice(0, 4));

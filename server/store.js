@@ -20,7 +20,7 @@ export class Store {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       return migrate(raw);
     }
-    const fresh = createTemplate(new Date().getFullYear());
+    const fresh = migrate(createTemplate(new Date().getFullYear()));
     this.#write(fresh);
     return fresh;
   }

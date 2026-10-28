@@ -32,6 +32,7 @@ export function createTemplate(year) {
     rev: 1,
     years: { [year]: createYearTemplate(year) },
     transactions: [],
+    settlements: [],
     settings: { accounts: ['Kreditkarte', 'Postkonto', 'Bar'], rules: [], importProfiles: [] },
   };
 }
