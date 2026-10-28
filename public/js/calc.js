@@ -170,11 +170,11 @@ export function monitorPot(pot, year, transactions, today = todayStr()) {
 export function categoryBreakdown(mon) {
   const rows = mon.pot.lines.map((l) => {
     const c = mon.byCat.get(l.name) || { actual: 0, planned: 0, count: 0 };
-    return { name: l.name, yearly: lineYearly(l), actual: c.actual, planned: c.planned, count: c.count };
+    return { key: l.name, name: l.name, yearly: lineYearly(l), actual: c.actual, planned: c.planned, count: c.count };
   });
   const known = new Set(mon.pot.lines.map((l) => l.name));
   for (const [cat, c] of mon.byCat) {
-    if (!known.has(cat)) rows.push({ name: cat || 'Ohne Kategorie', yearly: 0, actual: c.actual, planned: c.planned, count: c.count, unbudgeted: true });
+    if (!known.has(cat)) rows.push({ key: cat, name: cat || 'Ohne Kategorie', yearly: 0, actual: c.actual, planned: c.planned, count: c.count, unbudgeted: true });
   }
   return rows;
 }

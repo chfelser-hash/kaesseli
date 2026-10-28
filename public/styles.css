@@ -406,3 +406,15 @@ table.acc-table tr.on th { color: var(--accent); }
 .settle-btn { flex: none; }
 .hint.period { font-weight: 600; color: var(--ink-2); }
 .tx-date small { display: block; font-size: .72rem; color: var(--ink-3); }
+
+.cat-summary { display: flex; flex-wrap: wrap; gap: .3rem 1rem; align-items: baseline; margin-top: .8rem; padding: .6rem .8rem; border-radius: 10px; border-left: 4px solid var(--c); background: color-mix(in srgb, var(--c) 7%, var(--card)); font-size: .9rem; }
+.cat-summary strong { margin-right: auto; }
+.link-year { font-size: .8rem; white-space: nowrap; }
+
+table.cats tr.clickable { cursor: pointer; }
+table.cats tr.clickable:hover { background: var(--line-2); }
+table.cats .cat-link { padding: 0; color: var(--ink); font-weight: 550; text-align: left; }
+table.cats tr.clickable:hover .cat-link { color: var(--accent); text-decoration: underline; }
+table.cats tr.unbudgeted .cat-link { color: var(--neg); }
+table.cats .go-col { color: var(--ink-3); width: 1.5rem; text-align: right; }
+.pot-card .link-year { align-self: flex-start; padding: 0; margin-top: -.3rem; }

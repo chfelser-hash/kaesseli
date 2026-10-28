@@ -34,6 +34,7 @@ function potCard(mon) {
       kpi('Kumuliert',mon.lastRealized ? fmtSigned(mon.cumDiff) : '–', mon.lastRealized ? (good ? 'pos' : 'neg') : ''),
     ),
     sparkline(mon),
+    h('button', { class: 'link link-year', onclick: () => go('erfassen', { year: state.year, pot: pot.key }) }, `Alle Buchungen ${state.year} →`),
     h('dl', { class: 'facts' },
       h('dt', null, saving ? 'Gespart dieses Jahr' : 'Ausgegeben dieses Jahr'), h('dd', null, fmt0(mon.actualTotal) + ' / ' + fmt0(mon.yearly)),
       mon.plannedTotal ? [h('dt', null, 'Geplant'), h('dd', null, fmt0(mon.plannedTotal))] : null,
@@ -114,19 +115,21 @@ function categoryCard(mon) {
     h('div', { class: 'card-head' }, h('h2', null, h('span', { class: 'dot' }), `${mon.pot.name} nach Kategorie`)),
     h('div', { class: 'table-scroll' },
       h('table', { class: 'cats' },
-        h('thead', null, h('tr', null, h('th', null, 'Kategorie'), h('th', { class: 'num' }, 'Budget Jahr'), h('th', { class: 'num' }, 'Bisher'), h('th', { class: 'num' }, 'Geplant'), h('th', { class: 'num' }, 'Verbleibend'), h('th', { class: 'bar-col' }, ''))),
+        h('thead', null, h('tr', null, h('th', null, 'Kategorie'), h('th', { class: 'num' }, 'Budget Jahr'), h('th', { class: 'num' }, 'Bisher'), h('th', { class: 'num' }, 'Geplant'), h('th', { class: 'num' }, 'Verbleibend'), h('th', { class: 'bar-col' }, ''), h('th'))),
         h('tbody', null, rows.map((r) => {
           const used = r.yearly > 0 ? (r.actual + r.planned) / r.yearly : r.actual + r.planned > 0 ? 1.01 : 0;
-          return h('tr', { class: r.unbudgeted ? 'unbudgeted' : '' },
-            h('td', null, r.name, h('small', { class: 'muted' }, r.count ? ` (${r.count})` : '')),
+          const open = () => go('erfassen', { year: state.year, pot: mon.pot.key, cat: r.key });
+          return h('tr', { class: 'clickable' + (r.unbudgeted ? ' unbudgeted' : ''), title: `Alle Buchungen «${r.name}» ${state.year} anzeigen`, onclick: open },
+            h('td', null, h('button', { class: 'link cat-link', onclick: (e) => { e.stopPropagation(); open(); } }, r.name), h('small', { class: 'muted' }, r.count ? ` (${r.count})` : '')),
             h('td', { class: 'num' }, fmt0(r.yearly)),
             h('td', { class: 'num' }, fmt0(r.actual)),
             h('td', { class: 'num muted' }, r.planned ? fmt0(r.planned) : ''),
             h('td', { class: 'num ' + (rest(r) < 0 ? 'neg' : '') }, fmt0(rest(r))),
-            h('td', { class: 'bar-col' }, h('span', { class: 'bar' + (used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } })))
+            h('td', { class: 'bar-col' }, h('span', { class: 'bar' + (used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } }))),
+            h('td', { class: 'go-col' }, '→')
           );
         })),
-        h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('td', { class: 'num' }, fmt0(tot.yearly)), h('td', { class: 'num' }, fmt0(tot.actual)), h('td', { class: 'num' }, fmt0(tot.planned)), h('td', { class: 'num ' + (tot.yearly - tot.actual - tot.planned < 0 ? 'neg' : '') }, fmt0(tot.yearly - tot.actual - tot.planned)), h('td')))
+        h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('td', { class: 'num' }, fmt0(tot.yearly)), h('td', { class: 'num' }, fmt0(tot.actual)), h('td', { class: 'num' }, fmt0(tot.planned)), h('td', { class: 'num ' + (tot.yearly - tot.actual - tot.planned < 0 ? 'neg' : '') }, fmt0(tot.yearly - tot.actual - tot.planned)), h('td'), h('td')))
       )
     )
   );

@@ -1,7 +1,7 @@
 // Tab «Erfassen»: Abrechnungen schnell eintragen und den aktuellen Monat im Blick behalten
 import { h, toast, modal, chips, confirmDialog } from '../ui.js';
 import { state, api, yearForDate, render } from '../app.js';
-import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, fmtDate, MONTHS, potMonthly, nowStamp, nowTime, fmtStamp, cycleList, inPeriod } from '../calc.js';
+import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, fmtDate, MONTHS, potMonthly, potYearly, lineYearly, nowStamp, nowTime, fmtStamp, cycleList, inPeriod } from '../calc.js';
 
 const LS = 'budget.entry';
 const saved = (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })();
@@ -18,10 +18,11 @@ const form = {
 };
 let month = null;
 let filterPot = '';
+let filterCat = null; // Kategorie-Filter (z.B. «Geschenke»), null = alle
 let filterAcc = null; // null = alle, '' = ohne Angabe
 let accOpen = true;
 // Ansicht: Kalendermonat oder Abrechnungszyklus (offen seit letzter Abrechnung, frühere Zyklen, frei wählbar)
-const view = { mode: 'month', sel: 'open', from: '', to: '' };
+const view = { mode: 'month', sel: 'open', from: '', to: '', year: null };
 const lastDay = (ymStr) => { const [yy, mm] = ymStr.split('-').map(Number); return `${ymStr}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`; };
 let search = '';
 
@@ -34,7 +35,9 @@ const allPots = (date) => yearForDate(date)?.pots || [];
 const potByKey = (key, date) => allPots(date).find((p) => p.key === key);
 
 export function renderErfassen() {
-  if (state.params?.month) { month = state.params.month; filterPot = state.params.pot || ''; filterAcc = null; state.params = null; }
+  const prm = state.params;
+  if (prm?.month) { month = prm.month; view.mode = 'month'; filterPot = prm.pot || ''; filterCat = null; filterAcc = null; state.params = null; }
+  if (prm?.year) { view.mode = 'year'; view.year = Number(prm.year); filterPot = prm.pot || ''; filterCat = prm.cat ?? null; filterAcc = null; search = ''; state.params = null; }
   if (!month) month = ym(todayStr());
   const pots = trackedPots(form.date);
   if (!pots.find((p) => p.key === form.pot)) form.pot = pots[0]?.key || null;
@@ -257,10 +260,15 @@ async function undo(ids) {
 function monthPanel() {
   const today = todayStr();
   const isRange = view.mode === 'cycle';
+  const isYear = view.mode === 'year';
+  if (!view.year) view.year = Number(month.slice(0, 4));
   const cyc = cycleList(state.data.settlements);
   // Zeitraum bestimmen
   let from, to, pFrom = null, pTo = null, inclFrom = false, periodLabel = '';
-  if (!isRange) {
+  if (isYear) {
+    from = `${view.year}-01-01`;
+    to = `${view.year}-12-31`;
+  } else if (!isRange) {
     from = month + '-01';
     to = lastDay(month);
   } else if (view.sel === 'custom') {
@@ -282,18 +290,19 @@ function monthPanel() {
   for (let yy = y0; yy <= y1; yy++) {
     for (const p of state.data.years[yy]?.pots || []) if (!potMap.has(p.key)) potMap.set(p.key, p);
   }
-  if (!potMap.size) for (const p of state.data.years[y]?.pots || []) potMap.set(p.key, p);
+  if (!potMap.size) for (const p of state.data.years[isYear ? view.year : y]?.pots || []) potMap.set(p.key, p);
   const yearBudget = { pots: [...potMap.values()] };
   const pots = yearBudget.pots.filter((p) => p.tracked);
   const txMonth = isRange
     ? state.data.transactions.filter((t) => inPeriod(t, pFrom, pTo, inclFrom))
     : state.data.transactions.filter((t) => t.date >= from && t.date <= to);
 
-  const sumBy = (key) => txMonth.filter((t) => t.pot === key).reduce((a, t) => a + t.amount, 0);
+  const sumBy = (key, planned = null) => txMonth.filter((t) => t.pot === key && (planned === null || (t.date > today) === planned)).reduce((a, t) => a + t.amount, 0);
 
   const modeSegs = h('div', { class: 'segs', role: 'tablist' },
-    h('button', { class: 'seg' + (isRange ? '' : ' on'), onclick: () => { view.mode = 'month'; render(); } }, 'Monat'),
-    h('button', { class: 'seg' + (isRange ? ' on' : ''), onclick: () => { view.mode = 'cycle'; render(); } }, 'Abrechnung')
+    h('button', { class: 'seg' + (view.mode === 'month' ? ' on' : ''), onclick: () => { view.mode = 'month'; render(); } }, 'Monat'),
+    h('button', { class: 'seg' + (isRange ? ' on' : ''), onclick: () => { view.mode = 'cycle'; render(); } }, 'Abrechnung'),
+    h('button', { class: 'seg' + (isYear ? ' on' : ''), onclick: () => { view.mode = 'year'; view.year = Number(month.slice(0, 4)); render(); } }, 'Jahr')
   );
   const settleBtn = h('button', { class: 'btn primary settle-btn', onclick: settleNow, title: 'Abrechnungszeitpunkt speichern' }, 'Jetzt abrechnen');
   const setCustom = (f, t) => {
@@ -317,6 +326,13 @@ function monthPanel() {
         h('label', null, 'bis', h('input', { type: 'date', value: to, onchange: (e) => setCustom(from, e.target.value) }))] : null,
       h('div', { class: 'spacer' }),
       settleBtn)
+    : isYear ? h('div', { class: 'month-head' },
+      h('button', { class: 'icon-btn', 'aria-label': 'Vorheriges Jahr', onclick: () => { view.year--; render(); } }, '‹'),
+      h('h2', null, `Jahr ${view.year}`),
+      h('button', { class: 'icon-btn', 'aria-label': 'Nächstes Jahr', onclick: () => { view.year++; render(); } }, '›'),
+      view.year !== Number(today.slice(0, 4)) ? h('button', { class: 'link', onclick: () => { view.year = Number(today.slice(0, 4)); render(); } }, 'Heute') : null,
+      h('div', { class: 'spacer' }),
+      modeSegs)
     : h('div', { class: 'month-head' },
       h('button', { class: 'icon-btn', 'aria-label': 'Vorheriger Monat', onclick: () => { month = shiftMonth(month, -1); render(); } }, '‹'),
       h('h2', null, `${MONTHS[m - 1]} ${y}`),
@@ -333,7 +349,7 @@ function monthPanel() {
       return h('button', {
         class: 'pot-tile' + (filterPot === p.key ? ' on' : ''),
         style: { '--c': p.color },
-        onclick: () => { filterPot = filterPot === p.key ? '' : p.key; render(); },
+        onclick: () => { filterPot = filterPot === p.key ? '' : p.key; filterCat = null; render(); },
         title: 'Liste nach diesem Topf filtern',
       },
         h('span', { class: 'pt-name' }, p.name),
@@ -345,15 +361,17 @@ function monthPanel() {
 
   const tiles = h('div', { class: 'pot-tiles' },
     pots.map((p) => {
-      const actual = sumBy(p.key);
-      const budget = potMonthly(p);
+      // Jahresansicht: bisher ausgegeben vs. Jahresbudget (geplante Ausgaben separat)
+      const actual = isYear ? sumBy(p.key, false) : sumBy(p.key);
+      const planned = isYear ? sumBy(p.key, true) : 0;
+      const budget = isYear ? potYearly(p) : potMonthly(p);
       const ratio = budget > 0 ? actual / budget : 0;
       const saving = p.kind === 'saving';
       const over = !saving && ratio > 1;
       return h('button', {
         class: 'pot-tile' + (filterPot === p.key ? ' on' : '') + (over ? ' over' : ''),
         style: { '--c': p.color },
-        onclick: () => { filterPot = filterPot === p.key ? '' : p.key; render(); },
+        onclick: () => { filterPot = filterPot === p.key ? '' : p.key; filterCat = null; render(); },
         title: 'Liste nach diesem Topf filtern',
       },
         h('span', { class: 'pt-name' }, p.name),
@@ -361,7 +379,7 @@ function monthPanel() {
         h('span', { class: 'bar' + (over ? ' over' : '') }, h('span', { style: { width: Math.min(100, ratio * 100) + '%' } })),
         h('span', { class: 'pt-rest' }, saving
           ? (actual >= budget ? 'Ziel erreicht' : `noch ${fmt0(budget - actual)} einzahlen`)
-          : (over ? `${fmt0(actual - budget)} über Budget` : `${fmt0(budget - actual)} übrig`))
+          : (over ? `${fmt0(actual - budget)} über Budget` : `${fmt0(budget - actual)} übrig`) + (planned ? ` · ${fmt0(planned)} geplant` : ''))
       );
     })
   );
@@ -374,13 +392,14 @@ function monthPanel() {
   const list = () => {
     let rows = txMonth;
     if (filterPot) rows = rows.filter((t) => t.pot === filterPot);
+    if (filterCat !== null) rows = rows.filter((t) => (t.cat || '') === filterCat);
     if (filterAcc !== null) rows = rows.filter((t) => (t.account || '') === filterAcc);
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter((t) => `${t.note} ${t.cat} ${t.account} ${fmt(t.amount)}`.toLowerCase().includes(q));
     }
     rows = [...rows].sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
-    if (!rows.length) return h('p', { class: 'empty' }, txMonth.length ? 'Keine Treffer.' : isRange ? 'Keine Buchungen in diesem Zeitraum.' : 'Noch keine Buchungen in diesem Monat.');
+    if (!rows.length) return h('p', { class: 'empty' }, txMonth.length ? 'Keine Treffer.' : isRange ? 'Keine Buchungen in diesem Zeitraum.' : isYear ? 'Keine Buchungen in diesem Jahr.' : 'Noch keine Buchungen in diesem Monat.');
 
     const groups = filterPot ? [[filterPot, rows]] : pots.map((p) => [p.key, rows.filter((t) => t.pot === p.key)]).filter(([, r]) => r.length);
     // Buchungen in Töpfen, die (nicht mehr) getrackt sind
@@ -411,13 +430,31 @@ function monthPanel() {
 
   return h('section', { class: 'card month' },
     head,
-    pots.length ? (isRange ? rangeTiles : tiles) : h('p', { class: 'empty' }, isRange ? 'Für diesen Zeitraum gibt es kein Budget.' : `Für ${y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
+    pots.length ? (isRange ? rangeTiles : tiles) : h('p', { class: 'empty' }, isRange ? 'Für diesen Zeitraum gibt es kein Budget.' : `Für ${isYear ? view.year : y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
+    isYear && filterPot && filterCat !== null ? catSummary(txMonth, potMap.get(filterPot), filterCat, today) : null,
     isRange ? h('p', { class: 'hint period' }, `${periodLabel} · ${txMonth.length === 1 ? '1 Buchung' : txMonth.length + ' Buchungen'} · Total CHF ${fmt(txMonth.reduce((a, t) => a + t.amount, 0))}`) : null,
     accountTable(txMonth, yearBudget),
     h('div', { class: 'list-tools' }, searchInput,
-      filterPot || filterAcc !== null ? h('button', { class: 'chip on', onclick: () => { filterPot = ''; filterAcc = null; render(); } }, 'Filter ✕') : null),
+      filterPot || filterAcc !== null || filterCat !== null ? h('button', { class: 'chip on', onclick: () => { filterPot = ''; filterAcc = null; filterCat = null; render(); } },
+        filterCat !== null ? `${filterCat || 'Ohne Kategorie'} ✕` : 'Filter ✕') : null),
     listWrap
   );
+}
+
+/** Jahresübersicht einer Kategorie: Budget, bisher, geplant, verbleibend */
+function catSummary(tx, pot, cat, today) {
+  const rows = tx.filter((t) => t.pot === pot?.key && (t.cat || '') === cat);
+  const done = rows.filter((t) => t.date <= today).reduce((a, t) => a + t.amount, 0);
+  const planned = rows.filter((t) => t.date > today).reduce((a, t) => a + t.amount, 0);
+  const line = pot?.lines.find((l) => l.name === cat);
+  const budget = line ? lineYearly(line) : 0;
+  const rest = budget - done - planned;
+  return h('div', { class: 'cat-summary', style: { '--c': pot?.color || '#888' } },
+    h('strong', null, `${pot?.name || ''} · ${cat || 'Ohne Kategorie'}`),
+    h('span', null, `Budget ${fmt0(budget)}`),
+    h('span', null, `bisher ${fmt0(done)}`),
+    planned ? h('span', null, `geplant ${fmt0(planned)}`) : null,
+    h('span', { class: rest < 0 ? 'neg' : 'pos' }, `${rest < 0 ? 'überzogen' : 'verbleibend'} ${fmt0(Math.abs(rest))}`));
 }
 
 // ---------- Abrechnen ----------
