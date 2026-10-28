@@ -180,3 +180,21 @@ test('Eingefügter Text übernimmt die Uhrzeit', () => {
   const r = parsePastedText('Laden Epsilon\n24.10.2026 13:52 Musterdorf\n7.30  CHF\nLaden Zeta\n23.10.2026\n5.00 CHF', new Date(2026, 9, 28));
   assert.deepEqual(r.map((x) => [x.date, x.time]), [['2026-10-24', '13:52'], ['2026-10-23', '']]);
 });
+
+import { cashflow } from '../public/js/calc.js';
+test('Geldfluss: Monat, 13. Lohn, Jahr', () => {
+  const y = {
+    income: [{ name: 'Lohn A', expr: '1000', freq: 13 }, { name: 'Lohn B', expr: '500', freq: 13 }],
+    pots: [
+      { key: 'a', name: 'Fix', lines: [{ name: 'Miete', expr: '1200', freq: 12 }, { name: 'Steuer', expr: '1200', freq: 1 }] },
+      { key: 'b', name: 'Ferien', lines: [{ name: 'Ferien', expr: '300', freq: 12 }] },
+    ],
+  };
+  const c = cashflow(y);
+  assert.equal(c.incomeMonthly, 1500);
+  assert.equal(c.incomeExtra, 1500);
+  assert.equal(c.outMonthly, 1600); // 1200 + 100 Rückstellung + 300
+  assert.equal(c.pots[0].reserve, 100);
+  assert.equal(c.monthBalance, -100);
+  assert.equal(c.yearBalance, 1500 * 13 - 1600 * 12); // 300
+});

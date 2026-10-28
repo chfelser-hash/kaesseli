@@ -1,7 +1,7 @@
 // Tab «Budget»: Jahresbudget bearbeiten, neues Jahr aus Vorlage erstellen
 import { h, toast, modal, confirmDialog, debounce } from '../ui.js';
 import { state, api, render, setYear, yearList, reload } from '../app.js';
-import { FREQS, evalExpr, lineMonthly, lineYearly, budgetSummary, monitorPot, fmt, fmt0 } from '../calc.js';
+import { FREQS, evalExpr, lineMonthly, lineYearly, cashflow, monitorPot, fmt, fmt0 } from '../calc.js';
 
 let draft = null; // Arbeitskopie des Jahres
 let draftYear = null;
@@ -70,13 +70,11 @@ export function renderBudget() {
       newYearButton(),
       h('button', { class: 'btn ghost', onclick: deleteYear }, 'Jahr löschen')
     ),
-    h('div', { class: 'budget-layout' },
-      h('div', { class: 'budget-main' },
-        linesCard('Einkommen', draft.income, { income: true }),
-        ...draft.pots.map((p, i) => potCard(p, i)),
-        h('button', { class: 'btn block dashed', onclick: addPot }, '+ Topf hinzufügen')
-      ),
-      summaryCard()
+    summaryCard(),
+    h('div', { class: 'budget-main' },
+      linesCard('Einkommen', draft.income, { income: true }),
+      ...draft.pots.map((p, i) => potCard(p, i)),
+      h('button', { class: 'btn block dashed', onclick: addPot }, '+ Topf hinzufügen')
     )
   );
   recompute();
@@ -208,25 +206,64 @@ async function removePot(idx) {
 }
 
 // ---------- Zusammenfassung ----------
+/** «Geht das Budget auf?» – Monat, Einmalzahlungen (13. Lohn), ganzes Jahr + Überweisungen pro Topf */
 function summaryCard() {
+  const verdict = h('div', { class: 'verdict' });
+  const steps = h('div', { class: 'flow-steps' });
   const tbody = h('tbody');
-  const foot = h('tfoot');
+  const tfoot = h('tfoot');
+  const signed = (v) => (v > 0.5 ? '+' : v < -0.5 ? '−' : '') + fmt0(Math.abs(v));
+  const row = (label, value, cls = '') => h('div', { class: 'flow-row ' + cls }, h('span', null, label), h('span', { class: 'num' }, signed(value)));
+  const step = (title, sub, rows, result) => h('section', { class: 'flow-step' }, h('h3', null, title), h('p', { class: 'hint' }, sub), rows, result);
+
   calcFns.push(() => {
-    const s = budgetSummary(draft);
-    tbody.replaceChildren(
-      h('tr', { class: 'income' }, h('th', null, 'Einkommen'), h('td', { class: 'num' }, fmt0(s.incomeMonthly)), h('td', { class: 'num' }, fmt0(s.incomeYearly))),
-      ...s.pots.map((p) => h('tr', { style: { '--c': p.color } }, h('th', null, h('span', { class: 'dot' }), p.name), h('td', { class: 'num' }, fmt0(p.monthly)), h('td', { class: 'num' }, fmt0(p.yearly))))
+    const c = cashflow(draft);
+    const mb = c.monthBalance, yb = c.yearBalance;
+    // Fazit in einem Satz
+    let cls, text;
+    if (yb < -0.5) { cls = 'bad'; text = `Geht nicht auf: Übers Jahr fehlen ${fmt0(-yb)}.`; }
+    else if (mb < -0.5 && c.incomeExtra > 0) { cls = 'warn'; text = `Geht auf – aber nur dank ${c.extras.every((e) => e.name.includes('13.')) ? 'dem 13. Lohn' : 'den Einmalzahlungen'}: Jeden Monat fehlen ${fmt0(-mb)}, übers Jahr bleiben ${fmt0(yb)}.`; }
+    else if (mb < -0.5) { cls = 'bad'; text = `Jeden Monat fehlen ${fmt0(-mb)}.`; }
+    else { cls = 'good'; text = `Geht auf: Jeden Monat bleiben ${fmt0(mb)}, übers Jahr ${fmt0(yb)}.`; }
+    verdict.className = 'verdict ' + cls;
+    verdict.replaceChildren(h('span', { class: 'verdict-icon' }, cls === 'good' ? '✓' : cls === 'warn' ? '!' : '✕'), h('span', null, text));
+
+    steps.replaceChildren(
+      step('1 · Jeden Monat', 'Lohn, der jeden Monat kommt, gegen alles, was jeden Monat auf die Konten muss.', [
+        row('Lohn', c.incomeMonthly, 'in'),
+        row('Überweisungen auf die Konten', -c.outMonthly, 'out'),
+      ], row(mb < 0 ? 'fehlen pro Monat' : 'bleiben pro Monat', mb, 'result ' + (mb < -0.5 ? 'neg' : 'pos'))),
+      step('2 · Einmal im Jahr', c.extras.length ? 'Zusätzliche Zahlungen gleichen die Monate aus.' : 'Keine Einmalzahlungen budgetiert.', [
+        ...c.extras.map((e) => row(e.name, e.amount, 'in')),
+        row(mb < 0 ? '12 Monate Fehlbetrag' : '12 Monate Überschuss', mb * 12, mb < 0 ? 'out' : 'in'),
+      ], row('bleiben nach Ausgleich', yb, 'result ' + (yb < -0.5 ? 'neg' : 'pos'))),
+      step('3 · Ganzes Jahr', 'Kontrolle: Jahreseinkommen gegen alle Jahresausgaben.', [
+        row('Einkommen im Jahr', c.incomeYearly, 'in'),
+        row('Ausgaben im Jahr', -c.outYearly, 'out'),
+      ], row(yb < 0 ? 'fehlen im Jahr' : `Reserve im Jahr${c.incomeYearly ? ` (${Math.round((yb / c.incomeYearly) * 1000) / 10} %)` : ''}`, yb, 'result ' + (yb < -0.5 ? 'neg' : 'pos')))
     );
-    foot.replaceChildren(
-      h('tr', null, h('th', null, 'Total Ausgaben'), h('td', { class: 'num' }, fmt0(s.totalMonthly)), h('td', { class: 'num' }, fmt0(s.totalYearly))),
-      h('tr', { class: 'rest ' + (s.rest < 0 ? 'neg' : 'pos') }, h('th', null, 'Rest'), h('td', { class: 'num' }, fmt0(s.rest)), h('td', { class: 'num' }, fmt0(s.restYearly))),
-      h('tr', { class: 'rest ' + (s.restNo13 < 0 ? 'neg' : 'pos') }, h('th', null, 'Rest ohne 13.'), h('td', { class: 'num' }, fmt0(s.restNo13)), h('td'))
-    );
+
+    tbody.replaceChildren(...c.pots.map((p) => h('tr', { style: { '--c': p.color } },
+      h('th', null, h('span', { class: 'dot' }), p.name, p.account ? h('small', { class: 'muted' }, ' → ' + p.account) : null),
+      h('td', { class: 'num' }, p.running ? fmt0(p.running) : '–'),
+      h('td', { class: 'num' }, p.reserve ? fmt0(p.reserve) : '–'),
+      h('td', { class: 'num strong' }, fmt0(p.monthly)),
+      h('td', { class: 'num muted' }, fmt0(p.yearly)))));
+    tfoot.replaceChildren(h('tr', null, h('th', null, 'Total'), h('td', { class: 'num' }, fmt0(c.runningTotal)), h('td', { class: 'num' }, fmt0(c.reserveTotal)), h('td', { class: 'num' }, fmt0(c.outMonthly)), h('td', { class: 'num' }, fmt0(c.outYearly))));
   });
-  return h('aside', { class: 'card summary' },
-    h('h2', null, 'Zusammenfassung'),
-    h('table', { class: 'sum-table' }, h('thead', null, h('tr', null, h('th'), h('th', { class: 'num' }, 'Monat'), h('th', { class: 'num' }, 'Jahr'))), tbody, foot),
-    h('p', { class: 'hint' }, 'Beträge dürfen Rechnungen sein (z.B. 1500+120 oder 2*7000). «13×» verteilt einen 13. Monatslohn aufs Jahr.')
+
+  return h('section', { class: 'card summary' },
+    h('div', { class: 'card-head' }, h('h2', null, 'Geht das Budget auf?')),
+    verdict,
+    steps,
+    h('details', { class: 'transfers', open: true },
+      h('summary', null, 'Monatliche Überweisungen pro Topf'),
+      h('div', { class: 'table-scroll' },
+        h('table', { class: 'sum-table' },
+          h('thead', null, h('tr', null, h('th', null, 'Topf → Konto'), h('th', { class: 'num', title: 'Monatliche Posten' }, 'laufend'), h('th', { class: 'num', title: 'Jährliche/halbjährliche Rechnungen ÷ 12' }, '+ Rückstellung'), h('th', { class: 'num' }, '= pro Monat'), h('th', { class: 'num' }, 'pro Jahr'))),
+          tbody, tfoot)),
+      h('p', { class: 'hint' }, '«Rückstellung» = jährliche Rechnungen (z.B. Steuern, Krankenkasse, Serafe) geteilt durch 12. So viel muss jeden Monat aufs Konto, damit die Rechnung bei Fälligkeit gedeckt ist.')),
+    h('p', { class: 'hint' }, 'Beträge dürfen Rechnungen sein (z.B. 1500+120 oder 2*7000). Beim Lohn bedeutet «13×»: 12 Monatslöhne plus ein 13. Lohn einmal im Jahr.')
   );
 }
 

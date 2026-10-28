@@ -224,3 +224,34 @@ export function inPeriod(t, from, to, inclFromDay = false) {
   }
   return true;
 }
+
+/**
+ * Geldfluss eines Budgetjahres: Was kommt jeden Monat rein, was muss jeden Monat auf die Konten,
+ * und was gleicht der 13. Lohn (bzw. andere Einmalzahlungen) aus?
+ */
+export function cashflow(y) {
+  const f = (l) => Number(l.freq) || 12;
+  const incomeMonthly = y.income.filter((l) => f(l) >= 12).reduce((a, l) => a + lineValue(l), 0);
+  const extras = [];
+  for (const l of y.income) {
+    const v = lineValue(l);
+    if (f(l) > 12) extras.push({ name: `${l.name || 'Lohn'}: ${f(l) - 12 === 1 ? '13.' : f(l) - 12 + ' zusätzliche'} Monatslohn`, amount: v * (f(l) - 12) });
+    else if (f(l) < 12) extras.push({ name: l.name || 'Einmalzahlung', amount: v * f(l) });
+  }
+  const incomeExtra = extras.reduce((a, e) => a + e.amount, 0);
+  const pots = y.pots.map((p) => {
+    const running = p.lines.filter((l) => f(l) === 12).reduce((a, l) => a + lineValue(l), 0);
+    const reserve = p.lines.filter((l) => f(l) !== 12).reduce((a, l) => a + lineYearly(l) / 12, 0);
+    return { key: p.key, name: p.name, color: p.color, account: p.account, running, reserve, monthly: running + reserve, yearly: potYearly(p) };
+  });
+  const outMonthly = pots.reduce((a, p) => a + p.monthly, 0);
+  const outYearly = pots.reduce((a, p) => a + p.yearly, 0);
+  const monthBalance = incomeMonthly - outMonthly;
+  const incomeYearly = incomeMonthly * 12 + incomeExtra;
+  return {
+    incomeMonthly, extras, incomeExtra, pots, outMonthly, outYearly, monthBalance,
+    incomeYearly, yearBalance: incomeYearly - outYearly,
+    runningTotal: pots.reduce((a, p) => a + p.running, 0),
+    reserveTotal: pots.reduce((a, p) => a + p.reserve, 0),
+  };
+}
