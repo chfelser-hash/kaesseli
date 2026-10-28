@@ -98,6 +98,7 @@ for (let r = 1; r <= B.maxRow; r++) {
   const line = lineFromRow(r);
   if (!line) continue;
   const entry = { id: id(), name: label, ...line };
+  if (/^(3a|säule 3a|saeule 3a)$/i.test(label)) entry.saving = true; // Säule 3a = Sparen
   if (section.key === 'fix' && /haushalt/i.test(label)) haushalt.lines.push(entry);
   else pots.get(section.key).lines.push(entry);
 }

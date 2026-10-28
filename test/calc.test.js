@@ -213,3 +213,18 @@ test('Geldfluss: Sparen als Rest am Zyklusende', () => {
   assert.equal(c.savingTargetYearly, 4800);
   assert.equal(c.savingYearly - c.savingTargetYearly, c.yearBalance);
 });
+
+test('Geldfluss: feste Spar-Posten (z.B. Säule 3a)', () => {
+  const y = {
+    income: [{ name: 'Lohn', expr: '1000', freq: 13 }],
+    pots: [
+      { key: 'a', name: 'Fix', lines: [{ name: 'Miete', expr: '500', freq: 12 }, { name: '3a', expr: '1200', freq: 1, saving: true }] },
+      { key: 's', name: 'Sparen', kind: 'saving', lines: [{ name: 'Sparen', expr: '300', freq: 12 }] },
+    ],
+  };
+  const c = cashflow(y);
+  assert.equal(c.savingMonthly, 400); // 1000 - 500 - 100 (3a ist feste Überweisung)
+  assert.equal(c.fixedSavingYearly, 1200);
+  assert.equal(c.totalSavingYearly, 400 * 12 + 1000 + 1200);
+  assert.equal(c.pots[0].savingMonthly, 100);
+});

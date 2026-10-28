@@ -464,3 +464,8 @@ table.cats .go-col { color: var(--ink-3); width: 1.5rem; text-align: right; }
 .sum-table tr.saving th, .sum-table tr.saving td { border-top: 1px dashed var(--line); font-weight: 500; }
 .sum-table tr.saving td.strong { font-weight: 600; color: var(--ink-2); }
 .tag-rest { margin-left: .4rem; padding: 0 .35rem; border-radius: 6px; background: var(--pos-bg); color: var(--pos); font-weight: 600; }
+
+.flow-end { margin-top: auto; }
+.flow-total { margin-top: .7rem; padding-top: .5rem; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: .2rem; }
+.flow-total .flow-row.result { margin-top: .2rem; }
+table.lines td.center, table.lines th.center { text-align: center; }

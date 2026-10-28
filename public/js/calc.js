@@ -258,11 +258,24 @@ export function cashflow(y) {
   const savingTargetYearly = savingPots.reduce((a, p) => a + p.yearly, 0);
   const savingMonthly = incomeMonthly - spendMonthly; // bleibt jeden Monat fürs Sparen
   const savingYearly = savingMonthly * 12 + incomeExtra; // inkl. 13. Lohn
+  // Feste Spar-Posten in anderen Töpfen (z.B. Säule 3a in den Fixkosten)
+  const fixedSaving = [];
+  for (const p of y.pots) {
+    if (savingKeys.has(p.key)) continue;
+    for (const l of p.lines) if (l.saving) fixedSaving.push({ name: l.name || p.name, pot: p.name, monthly: lineYearly(l) / 12, yearly: lineYearly(l) });
+  }
+  const fixedSavingYearly = fixedSaving.reduce((a, x) => a + x.yearly, 0);
+  for (const p of pots) {
+    const src = y.pots.find((x) => x.key === p.key);
+    p.savingMonthly = savingKeys.has(p.key) ? 0 : src.lines.filter((l) => l.saving).reduce((a, l) => a + lineYearly(l) / 12, 0);
+  }
   return {
     incomeMonthly, extras, incomeExtra, pots, outMonthly, outYearly, monthBalance,
     incomeYearly, yearBalance: incomeYearly - outYearly,
     hasSaving: savingPots.length > 0, savingPots, spendPots, spendMonthly, spendYearly,
     savingTargetMonthly, savingTargetYearly, savingMonthly, savingYearly,
+    fixedSaving, fixedSavingYearly,
+    totalSavingYearly: Math.max(0, savingYearly) + fixedSavingYearly,
     runningTotal: pots.reduce((a, p) => a + p.running, 0),
     reserveTotal: pots.reduce((a, p) => a + p.reserve, 0),
   };

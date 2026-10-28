@@ -96,9 +96,9 @@ function linesCard(title, lines, opts = {}) {
     totalY.textContent = fmt(lines.reduce((a, l) => a + lineYearly(l), 0));
   });
   const table = h('table', { class: 'lines' },
-    h('thead', null, h('tr', null, h('th', null, 'Posten'), h('th', null, 'Betrag'), h('th', null, 'Rhythmus'), h('th', { class: 'num' }, 'pro Monat'), h('th', { class: 'num' }, 'pro Jahr'), h('th'))),
+    h('thead', null, h('tr', null, h('th', null, 'Posten'), h('th', null, 'Betrag'), h('th', null, 'Rhythmus'), h('th', { class: 'num' }, 'pro Monat'), h('th', { class: 'num' }, 'pro Jahr'), opts.income ? null : h('th', { class: 'center', title: 'Geht auf ein Sparkonto (z.B. Säule 3a) und zählt in der Zusammenfassung zum Sparen' }, 'Sparen'), h('th'))),
     body,
-    h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('td'), h('td'), h('td', { class: 'num' }, totalM), h('td', { class: 'num' }, totalY), h('td')))
+    h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('td'), h('td'), h('td', { class: 'num' }, totalM), h('td', { class: 'num' }, totalY), opts.income ? null : h('td'), h('td')))
   );
   const add = h('button', { class: 'link', onclick: () => { lines.push({ id: rid(), name: '', expr: '0', freq: 12 }); rebuild(); changed(); body.lastChild?.querySelector('input')?.focus(); } }, '+ Posten');
   if (opts.embed) return h('div', null, h('div', { class: 'table-scroll' }, table), add);
@@ -130,6 +130,7 @@ function lineRow(l, i, lines, rebuild, opts) {
     h('td', null, h('select', { 'aria-label': 'Rhythmus', onchange: (e) => { l.freq = Number(e.target.value); changed(); } },
       FREQS.filter((f) => opts.income || f.v !== 13).map((f) => h('option', { value: f.v, selected: f.v === Number(l.freq) }, f.label)))),
     m, y,
+    opts.income ? null : h('td', { class: 'center' }, h('input', { type: 'checkbox', checked: !!l.saving, 'aria-label': 'Sparen', title: 'Geht auf ein Sparkonto (z.B. Säule 3a)', onchange: (e) => { l.saving = e.target.checked; changed(); } })),
     h('td', { class: 'row-actions' },
       h('button', { class: 'icon-btn sm', title: 'Nach oben', disabled: i === 0, onclick: () => { [lines[i - 1], lines[i]] = [lines[i], lines[i - 1]]; rebuild(); changed(); } }, '↑'),
       h('button', { class: 'icon-btn sm', title: 'Entfernen', onclick: () => { lines.splice(i, 1); rebuild(); changed(); } }, '✕')
@@ -212,6 +213,7 @@ function summaryCard() {
   const steps = h('div', { class: 'flow-steps' });
   const tbody = h('tbody');
   const tfoot = h('tfoot');
+  const quota = (v, base) => (base ? `${Math.round((v / base) * 1000) / 10} %` : '–');
   const signed = (v) => (v > 0.5 ? '+' : v < -0.5 ? '−' : '') + fmt0(Math.abs(v));
   const row = (label, value, cls = '') => h('div', { class: 'flow-row ' + cls }, h('span', null, label), h('span', { class: 'num' }, signed(value)));
   const step = (title, sub, rows, result) => h('section', { class: 'flow-step' }, h('h3', null, title), h('p', { class: 'hint' }, sub), rows, result);
@@ -226,6 +228,7 @@ function summaryCard() {
       if (c.savingMonthly < -0.5) { cls = 'bad'; text = `Jeden Monat fehlen ${fmt0(-c.savingMonthly)} – schon ohne Sparen reicht der Lohn nicht.`; }
       else if (diff >= -0.5) { cls = 'good'; text = `Sparziel erreichbar: ${fmt0(c.savingYearly)} von ${fmt0(c.savingTargetYearly)} im Jahr (${signed(diff)}).`; }
       else { cls = 'warn'; text = `Sparziel nicht erreichbar: ${fmt0(c.savingYearly)} von ${fmt0(c.savingTargetYearly)} im Jahr (${signed(diff)}).`; }
+      if (c.savingMonthly >= -0.5 && c.fixedSavingYearly) text += ` Total gespart inkl. ${c.fixedSaving.map((x) => x.name).join(', ')}: ${fmt0(c.totalSavingYearly)}${c.incomeYearly ? ` (${quota(c.totalSavingYearly, c.incomeYearly)} vom Einkommen)` : ''}.`;
     } else if (yb < -0.5) { cls = 'bad'; text = `Geht nicht auf: Übers Jahr fehlen ${fmt0(-yb)}.`; }
     else if (mb < -0.5 && c.incomeExtra > 0) { cls = 'warn'; text = `Geht auf – aber nur dank dem 13. Lohn: Jeden Monat fehlen ${fmt0(-mb)}, übers Jahr bleiben ${fmt0(yb)}.`; }
     else if (mb < -0.5) { cls = 'bad'; text = `Jeden Monat fehlen ${fmt0(-mb)}.`; }
@@ -249,7 +252,12 @@ function summaryCard() {
         step('3 · Sparen im Jahr', 'Monatlicher Rest × 12 plus Einmalzahlungen gegen das Sparziel.', [
           row(`12 × ${fmt0(sm)} + ${fmt0(c.incomeExtra)}`, c.savingYearly, 'in'),
           row('Sparziel', -c.savingTargetYearly, 'out'),
-        ], row(diff < -0.5 ? 'unter dem Ziel' : 'über dem Ziel', diff, 'result ' + (diff < -0.5 ? 'neg' : 'pos')))
+        ], h('div', { class: 'flow-end' },
+          row(diff < -0.5 ? 'unter dem Ziel' : 'über dem Ziel', diff, 'result ' + (diff < -0.5 ? 'neg' : 'pos')),
+          c.fixedSaving.length ? h('div', { class: 'flow-total' },
+            row('Sparkonto', Math.max(0, c.savingYearly), 'in'),
+            ...c.fixedSaving.map((x) => row(`${x.name} (fest)`, x.yearly, 'in')),
+            row(`Total gespart · ${quota(c.totalSavingYearly, c.incomeYearly)} vom Einkommen`, c.totalSavingYearly, 'result pos')) : null))
       );
     } else {
       steps.replaceChildren(
@@ -270,7 +278,8 @@ function summaryCard() {
 
     const potRow = (p, saving) => h('tr', { class: saving ? 'saving' : '', style: { '--c': p.color } },
       h('th', null, h('span', { class: 'dot' }), p.name, p.account ? h('small', { class: 'muted' }, ' → ' + p.account) : null,
-        saving ? h('small', { class: 'tag-rest' }, 'Rest am Zyklusende') : null),
+        saving ? h('small', { class: 'tag-rest' }, 'Rest am Zyklusende') : null,
+        !saving && p.savingMonthly ? h('small', { class: 'tag-rest' }, `davon Sparen ${fmt0(p.savingMonthly)}`) : null),
       h('td', { class: 'num' }, saving ? '' : p.running ? fmt0(p.running) : '–'),
       h('td', { class: 'num' }, saving ? '' : p.reserve ? fmt0(p.reserve) : '–'),
       h('td', { class: 'num strong' }, saving ? `Ziel ${fmt0(p.monthly)}` : fmt0(p.monthly)),
