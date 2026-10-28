@@ -247,3 +247,20 @@ test('Sparen: erwartete Einzahlung pro Monat (13. Lohn im Dezember)', () => {
   assert.equal(m.forecast, 600 + 300 * 9 + 1300);
   assert.equal(m.target, 4800);
 });
+
+import { categoryBreakdown } from '../public/js/calc.js';
+test('Unterkategorien: Betrag 0 zählt zum Budget-Posten', () => {
+  const pot = { key: 'f', name: 'Ferien', kind: 'expense', lines: [
+    { name: 'Ferien', expr: '1200', freq: 1 }, { name: 'Thailand', expr: '0', freq: 1 }, { name: 'Rom', expr: '0', freq: 1 },
+  ] };
+  const tx = [
+    { date: '2026-02-01', amount: 500, pot: 'f', cat: 'Thailand' },
+    { date: '2026-03-01', amount: 200, pot: 'f', cat: 'Rom' },
+    { date: '2026-03-02', amount: 100, pot: 'f', cat: '' },
+  ];
+  const rows = categoryBreakdown(monitorPot(pot, 2026, tx, '2026-10-28'));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].actual, 800);
+  assert.deepEqual(rows[0].children.map((c) => [c.name, c.actual]), [['Thailand', 500], ['Rom', 200], ['ohne Unterkategorie', 100]]);
+  assert.equal(Math.round(rows[0].children[0].share * 1000), 625);
+});

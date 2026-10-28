@@ -1,7 +1,7 @@
 // Tab «Budget»: Jahresbudget bearbeiten, neues Jahr aus Vorlage erstellen
 import { h, toast, modal, confirmDialog, debounce } from '../ui.js';
 import { state, api, render, setYear, yearList, reload } from '../app.js';
-import { FREQS, evalExpr, lineMonthly, lineYearly, cashflow, monitorPot, fmt, fmt0 } from '../calc.js';
+import { FREQS, evalExpr, lineMonthly, lineYearly, parentOf, cashflow, monitorPot, fmt, fmt0 } from '../calc.js';
 
 let draft = null; // Arbeitskopie des Jahres
 let draftYear = null;
@@ -116,11 +116,32 @@ function lineRow(l, i, lines, rebuild, opts) {
     oninput: (e) => { l.expr = e.target.value; changed(); },
   });
   calcFns.push(() => {
-    m.textContent = fmt(lineMonthly(l));
-    y.textContent = fmt(lineYearly(l));
+    const sub = !opts.income && lineYearly(l) === 0;
+    m.textContent = sub ? '–' : fmt(lineMonthly(l));
+    y.textContent = sub ? '–' : fmt(lineYearly(l));
+    m.classList.toggle('muted', sub);
+    y.classList.toggle('muted', sub);
     exprInput.classList.toggle('invalid', !Number.isFinite(evalExpr(l.expr)));
     exprInput.title = Number.isFinite(evalExpr(l.expr)) ? '= ' + fmt(evalExpr(l.expr)) : 'Ungültige Rechnung';
   });
+  // Betrag 0 → Unterkategorie: statt Rhythmus wählt man, zu welchem Budget-Posten sie gehört
+  const isSub = () => !opts.income && lineYearly(l) === 0;
+  const freqCell = h('td');
+  const fillFreq = () => {
+    if (isSub()) {
+      const budgetLines = lines.filter((x) => x !== l && lineYearly(x) !== 0);
+      const current = parentOf({ lines }, l);
+      freqCell.replaceChildren(h('select', { 'aria-label': 'Gehört zu', class: 'parent-select', title: 'Unterkategorie: zählt zum Budget dieses Postens',
+        onchange: (e) => { l.parent = e.target.value; changed(); } },
+        h('option', { value: '', selected: !current }, budgetLines.length ? 'eigene Kategorie' : 'Kategorie ohne Budget'),
+        budgetLines.map((b) => h('option', { value: b.name, selected: b.name === current }, '↳ ' + (b.name || '…')))));
+    } else {
+      freqCell.replaceChildren(h('select', { 'aria-label': 'Rhythmus', onchange: (e) => { l.freq = Number(e.target.value); changed(); } },
+        FREQS.filter((f) => opts.income || f.v !== 13).map((f) => h('option', { value: f.v, selected: f.v === Number(l.freq) }, f.label))));
+    }
+  };
+  fillFreq();
+  exprInput.addEventListener('change', () => rebuild()); // Wechsel Budget-Posten ↔ Unterkategorie
   let oldName = l.name;
   return h('tr', null,
     h('td', null, h('input', {
@@ -130,10 +151,9 @@ function lineRow(l, i, lines, rebuild, opts) {
       onchange: () => opts.pot && renameCategory(opts.pot, oldName, l.name),
     })),
     h('td', null, exprInput),
-    h('td', null, h('select', { 'aria-label': 'Rhythmus', onchange: (e) => { l.freq = Number(e.target.value); changed(); } },
-      FREQS.filter((f) => opts.income || f.v !== 13).map((f) => h('option', { value: f.v, selected: f.v === Number(l.freq) }, f.label)))),
+    freqCell,
     m, y,
-    noSavingCol(opts) ? null : h('td', { class: 'center' }, h('input', { type: 'checkbox', checked: !!l.saving, 'aria-label': 'Sparen', title: 'Geht auf ein Sparkonto (z.B. Säule 3a)', onchange: (e) => { l.saving = e.target.checked; changed(); } })),
+    noSavingCol(opts) ? null : h('td', { class: 'center' }, isSub() ? null : h('input', { type: 'checkbox', checked: !!l.saving, 'aria-label': 'Sparen', title: 'Geht auf ein Sparkonto (z.B. Säule 3a)', onchange: (e) => { l.saving = e.target.checked; changed(); } })),
     h('td', { class: 'row-actions' },
       h('button', { class: 'icon-btn sm', title: 'Nach oben', disabled: i === 0, onclick: () => { [lines[i - 1], lines[i]] = [lines[i], lines[i - 1]]; rebuild(); changed(); } }, '↑'),
       h('button', { class: 'icon-btn sm', title: 'Entfernen', onclick: () => { lines.splice(i, 1); rebuild(); changed(); } }, '✕')

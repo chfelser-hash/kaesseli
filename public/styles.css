@@ -489,3 +489,16 @@ table.lines td.center, table.lines th.center { text-align: center; }
 
 .orphan-hint { color: var(--neg); margin-left: .3rem; }
 .btn.small { min-height: 30px; padding: .2rem .6rem; font-size: .82rem; }
+
+/* Unterkategorien */
+table.cats tr.parent td, table.cats tr.parent th { font-weight: 650; }
+table.cats tr.child td { font-size: .88rem; padding-top: .3rem; padding-bottom: .3rem; border-bottom-color: transparent; }
+table.cats tr.child td:first-child { padding-left: 1.6rem; position: relative; }
+table.cats tr.child td:first-child::before { content: '↳'; position: absolute; left: .5rem; color: var(--ink-3); }
+table.cats tr.child .cat-link { font-weight: 500; color: var(--ink-2); }
+table.cats tr.child.uncat .cat-link { font-style: italic; }
+table.cats td.share { font-size: .82rem; }
+.bar.thin { height: 4px; }
+
+table.lines select.parent-select { color: var(--ink-2); font-style: italic; }
+table.lines th:nth-child(3)::after { content: ' / gehört zu'; text-transform: none; font-weight: 500; }

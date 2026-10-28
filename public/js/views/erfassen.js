@@ -1,7 +1,7 @@
 // Tab «Erfassen»: Abrechnungen schnell eintragen und den aktuellen Monat im Blick behalten
 import { h, toast, modal, chips, confirmDialog } from '../ui.js';
 import { state, api, yearForDate, render } from '../app.js';
-import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, fmtDate, MONTHS, potMonthly, potYearly, lineYearly, nowStamp, nowTime, fmtStamp, cycleList, inPeriod } from '../calc.js';
+import { evalExpr, todayStr, ym, shiftMonth, fmt, fmt0, fmtDateShort, fmtDate, MONTHS, potMonthly, potYearly, lineYearly, parentOf, nowStamp, nowTime, fmtStamp, cycleList, inPeriod } from '../calc.js';
 
 const LS = 'budget.entry';
 const saved = (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })();
@@ -384,10 +384,22 @@ function monthPanel() {
     oninput: (e) => { search = e.target.value; listWrap.replaceChildren(list()); },
   });
 
+  // Kategorie-Filter: ein Budget-Posten umfasst auch seine Unterkategorien
+  const catSet = (() => {
+    if (filterCat === null) return null;
+    const set = new Set([filterCat]);
+    const pot = potMap.get(filterPot);
+    if (pot) {
+      for (const l of pot.lines) if (parentOf(pot, l) === filterCat) set.add(l.name);
+      const budgetLines = pot.lines.filter((l) => lineYearly(l) !== 0);
+      if (budgetLines.length === 1 && budgetLines[0].name === filterCat) set.add('');
+    }
+    return set;
+  })();
   const visibleRows = () => {
     let rows = txMonth;
     if (filterPot) rows = rows.filter((t) => t.pot === filterPot);
-    if (filterCat !== null) rows = rows.filter((t) => (t.cat || '') === filterCat);
+    if (catSet) rows = rows.filter((t) => catSet.has(t.cat || ''));
     if (filterAcc !== null) rows = rows.filter((t) => (t.account || '') === filterAcc);
     if (search) {
       const q = search.toLowerCase();
@@ -454,7 +466,7 @@ function monthPanel() {
   return h('section', { class: 'card month' },
     head,
     pots.length ? (isRange ? rangeTiles : tiles) : h('p', { class: 'empty' }, isRange ? 'Für diesen Zeitraum gibt es kein Budget.' : `Für ${isYear ? view.year : y} gibt es noch kein Budget. Lege es im Tab «Budget» an.`),
-    isYear && filterPot && filterCat !== null ? catSummary(txMonth, potMap.get(filterPot), filterCat, today) : null,
+    isYear && filterPot && filterCat !== null ? catSummary(txMonth, potMap.get(filterPot), filterCat, today, catSet) : null,
     isRange ? h('p', { class: 'hint period' }, `${periodLabel} · ${txMonth.length === 1 ? '1 Buchung' : txMonth.length + ' Buchungen'} · Total CHF ${fmt(txMonth.reduce((a, t) => a + t.amount, 0))}`) : null,
     accountTable(txMonth, yearBudget),
     h('div', { class: 'list-tools' }, searchInput,
@@ -467,16 +479,17 @@ function monthPanel() {
 }
 
 /** Jahresübersicht einer Kategorie: Budget, bisher, geplant, verbleibend */
-function catSummary(tx, pot, cat, today) {
-  const rows = tx.filter((t) => t.pot === pot?.key && (t.cat || '') === cat);
+function catSummary(tx, pot, cat, today, catSet) {
+  const rows = tx.filter((t) => t.pot === pot?.key && (catSet ? catSet.has(t.cat || '') : (t.cat || '') === cat));
+  const parent = pot && pot.lines.find((l) => l.name === cat) ? parentOf(pot, pot.lines.find((l) => l.name === cat)) : '';
   const done = rows.filter((t) => t.date <= today).reduce((a, t) => a + t.amount, 0);
   const planned = rows.filter((t) => t.date > today).reduce((a, t) => a + t.amount, 0);
   const line = pot?.lines.find((l) => l.name === cat);
   const budget = line ? lineYearly(line) : 0;
   const rest = budget - done - planned;
   return h('div', { class: 'cat-summary', style: { '--c': pot?.color || '#888' } },
-    h('strong', null, `${pot?.name || ''} · ${cat || 'Ohne Kategorie'}`),
-    budget ? h('span', null, `Budget ${fmt0(budget)}`) : h('span', { class: 'muted' }, 'ohne eigenes Budget'),
+    h('strong', null, `${pot?.name || ''} · ${parent ? parent + ' › ' : ''}${cat || 'Ohne Kategorie'}`),
+    budget ? h('span', null, `Budget ${fmt0(budget)}`) : h('span', { class: 'muted' }, parent ? `zählt zum Budget «${parent}»` : 'ohne eigenes Budget'),
     h('span', null, `bisher ${fmt0(done)}`),
     planned ? h('span', null, `geplant ${fmt0(planned)}`) : null,
     budget ? h('span', { class: rest < 0 ? 'neg' : 'pos' }, `${rest < 0 ? 'überzogen' : 'verbleibend'} ${fmt0(Math.abs(rest))}`) : h('span', { class: 'strong' }, `Total ${fmt0(done + planned)}`));

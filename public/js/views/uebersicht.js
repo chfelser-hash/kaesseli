@@ -1,7 +1,7 @@
 // Tab «Übersicht»: Budget vs. Ist pro Topf und Monat (ersetzt das Excel-Monitoring)
 import { h, s } from '../ui.js';
 import { state, currentYear, go, render } from '../app.js';
-import { monitorPot, categoryBreakdown, cashflow, todayStr, fmt, fmt0, fmtSigned, fmtDate, MONTHS_SHORT } from '../calc.js';
+import { monitorPot, categoryBreakdown, cashflow, lineYearly, todayStr, fmt, fmt0, fmtSigned, fmtDate, MONTHS_SHORT } from '../calc.js';
 import { editTx, bulkAssign } from './erfassen.js';
 import { modal, toast } from '../ui.js';
 
@@ -152,35 +152,44 @@ function categoryCard(mon) {
   const rows = categoryBreakdown(mon);
   const tot = rows.reduce((a, r) => ({ yearly: a.yearly + r.yearly, actual: a.actual + r.actual, planned: a.planned + r.planned }), { yearly: 0, actual: 0, planned: 0 });
   const rest = (r) => r.yearly - r.actual - r.planned;
+  const hasUncat = rows.some((r) => (r.unbudgeted && r.key === '' && r.count) || r.children?.some((c) => c.uncategorized && c.count));
+  const open = (key) => go('erfassen', { year: state.year, pot: mon.pot.key, cat: key });
+  const nameCell = (r, extra) => h('td', null,
+    h('button', { class: 'link cat-link', onclick: (e) => { e.stopPropagation(); open(r.key); } }, r.name),
+    h('small', { class: 'muted' }, r.count ? ` (${r.count})` : ''), extra);
+
+  const topRow = (r) => {
+    const orphan = r.unbudgeted && r.key !== ''; // Kategorie gibt es im Budget nicht (mehr), z.B. nach Umbenennen
+    const dash = r.noBudget || r.unbudgeted;
+    const used = r.yearly > 0 ? (r.actual + r.planned) / r.yearly : 0;
+    return h('tr', { class: 'clickable' + (r.unbudgeted ? ' unbudgeted' : '') + (r.children?.length ? ' parent' : ''), title: `Alle Buchungen «${r.name}» ${state.year} anzeigen`, onclick: () => open(r.key) },
+      nameCell(r, orphan ? h('small', { class: 'orphan-hint' }, ' nicht im Budget') : null),
+      h('td', { class: 'num' + (dash ? ' muted' : '') }, dash ? '–' : fmt0(r.yearly)),
+      h('td', { class: 'num' }, fmt0(r.actual)),
+      h('td', { class: 'num muted' }, r.planned ? fmt0(r.planned) : ''),
+      h('td', { class: 'num ' + (dash ? 'muted' : rest(r) < 0 ? 'neg' : '') }, dash ? '–' : fmt0(rest(r))),
+      h('td', { class: 'bar-col' },
+        orphan ? h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); reassign(mon, r.key, r.name); } }, 'zuordnen …')
+          : dash ? null
+            : h('span', { class: 'bar' + (used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } }))),
+      h('td', { class: 'go-col' }, '→'));
+  };
+  const childRow = (c) => h('tr', { class: 'clickable child' + (c.uncategorized ? ' uncat' : ''), title: `Alle Buchungen «${c.name}» ${state.year} anzeigen`, onclick: () => open(c.key) },
+    nameCell(c),
+    h('td'),
+    h('td', { class: 'num' }, fmt0(c.actual)),
+    h('td', { class: 'num muted' }, c.planned ? fmt0(c.planned) : ''),
+    h('td', { class: 'num muted share' }, Math.round(c.share * 100) + ' %'),
+    h('td', { class: 'bar-col' }, h('span', { class: 'bar thin neutral' }, h('span', { style: { width: Math.min(100, c.share * 100) + '%' } }))),
+    h('td', { class: 'go-col' }, '→'));
+
   return h('section', { class: 'card', style: { '--c': mon.pot.color } },
     h('div', { class: 'card-head' }, h('h2', null, h('span', { class: 'dot' }), `${mon.pot.name} nach Kategorie`),
-      rows.some((r) => r.unbudgeted && r.key === '' && r.count) ? h('button', { class: 'btn', onclick: () => autoAssign(mon) }, 'Ohne Kategorie automatisch zuordnen …') : null),
+      hasUncat ? h('button', { class: 'btn', onclick: () => autoAssign(mon) }, 'Ohne Kategorie automatisch zuordnen …') : null),
     h('div', { class: 'table-scroll' },
       h('table', { class: 'cats' },
-        h('thead', null, h('tr', null, h('th', null, 'Kategorie'), h('th', { class: 'num' }, 'Budget Jahr'), h('th', { class: 'num' }, 'Bisher'), h('th', { class: 'num' }, 'Geplant'), h('th', { class: 'num' }, 'Verbleibend'), h('th', { class: 'bar-col' }, ''), h('th'))),
-        h('tbody', null, rows.map((r) => {
-          // Kategorie ohne eigenes Budget (Betrag 0): nur gruppieren, nicht als überzogen markieren
-          const noBudget = !r.unbudgeted && r.yearly === 0;
-          const orphan = r.unbudgeted && r.key !== ''; // Kategorie gibt es im Budget nicht (mehr), z.B. nach Umbenennen
-          const dash = noBudget || r.unbudgeted;
-          const potSpent = tot.actual + tot.planned || 1;
-          const used = noBudget ? (r.actual + r.planned) / potSpent : r.yearly > 0 ? (r.actual + r.planned) / r.yearly : r.actual + r.planned > 0 ? 1.01 : 0;
-          const open = () => go('erfassen', { year: state.year, pot: mon.pot.key, cat: r.key });
-          return h('tr', { class: 'clickable' + (r.unbudgeted ? ' unbudgeted' : ''), title: `Alle Buchungen «${r.name}» ${state.year} anzeigen`, onclick: open },
-            h('td', null, h('button', { class: 'link cat-link', onclick: (e) => { e.stopPropagation(); open(); } }, r.name), h('small', { class: 'muted' }, r.count ? ` (${r.count})` : ''),
-              orphan ? h('small', { class: 'orphan-hint' }, ' nicht im Budget') : null),
-            h('td', { class: 'num' + (dash ? ' muted' : '') }, dash ? '–' : fmt0(r.yearly)),
-            h('td', { class: 'num' }, fmt0(r.actual)),
-            h('td', { class: 'num muted' }, r.planned ? fmt0(r.planned) : ''),
-            h('td', { class: 'num ' + (dash ? 'muted' : rest(r) < 0 ? 'neg' : '') }, dash ? '–' : fmt0(rest(r))),
-            h('td', { class: 'bar-col' },
-              orphan
-                ? h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); reassign(mon, r.key, r.name); } }, 'zuordnen …')
-                : dash ? null
-                  : h('span', { class: 'bar' + (used > 1 ? ' over' : '') }, h('span', { style: { width: Math.min(100, used * 100) + '%' } }))),
-            h('td', { class: 'go-col' }, '→')
-          );
-        })),
+        h('thead', null, h('tr', null, h('th', null, 'Kategorie'), h('th', { class: 'num' }, 'Budget Jahr'), h('th', { class: 'num' }, 'Bisher'), h('th', { class: 'num' }, 'Geplant'), h('th', { class: 'num' }, 'Verbleibend / Anteil'), h('th', { class: 'bar-col' }, ''), h('th'))),
+        h('tbody', null, rows.map((r) => [topRow(r), ...(r.children || []).map(childRow)])),
         h('tfoot', null, h('tr', null, h('th', null, 'Total'), h('td', { class: 'num' }, fmt0(tot.yearly)), h('td', { class: 'num' }, fmt0(tot.actual)), h('td', { class: 'num' }, fmt0(tot.planned)), h('td', { class: 'num ' + (tot.yearly - tot.actual - tot.planned < 0 ? 'neg' : '') }, fmt0(tot.yearly - tot.actual - tot.planned)), h('td'), h('td')))
       )
     )
@@ -207,7 +216,9 @@ async function autoAssign(mon) {
   const pot = mon.pot;
   // Ganzer Kategoriename (ab 3 Zeichen) oder einzelne Wörter daraus (ab 4 Zeichen), jeweils als ganzes Wort
   const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const words = pot.lines.map((l) => {
+  // Unterkategorien (Betrag 0) zuerst – «Thailand» ist spezifischer als «Ferien»
+  const ordered = [...pot.lines].sort((a, b) => (lineYearly(a) === 0 ? 0 : 1) - (lineYearly(b) === 0 ? 0 : 1));
+  const words = ordered.map((l) => {
     const keys = [l.name.trim(), ...l.name.split(/[\s,/–-]+/).filter((w) => w.length >= 4)].filter((w) => w.length >= 3);
     return { name: l.name, res: [...new Set(keys)].map((k) => new RegExp('(^|[^\\p{L}])' + esc(k) + '($|[^\\p{L}])', 'iu')) };
   });

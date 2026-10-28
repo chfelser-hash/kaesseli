@@ -104,7 +104,7 @@ function cleanTx(input, user, existing = {}) {
 
 function cleanYear(y, year) {
   if (!y || !Array.isArray(y.pots) || !Array.isArray(y.income)) throw httpError(400, 'Budget ungültig');
-  const line = (l) => ({ id: str(l.id || newId(), 20), name: str(l.name, 120), expr: str(l.expr ?? '0', 200), freq: Number(l.freq) || 12, note: str(l.note, 300), saving: !!l.saving });
+  const line = (l) => ({ id: str(l.id || newId(), 20), name: str(l.name, 120), expr: str(l.expr ?? '0', 200), freq: Number(l.freq) || 12, note: str(l.note, 300), saving: !!l.saving, parent: str(l.parent, 120) });
   const keys = new Set();
   return {
     year: Number(year),

@@ -169,17 +169,68 @@ export function monitorPot(pot, year, transactions, today = todayStr(), expected
   };
 }
 
-/** Kategorie-Auswertung: Budget pro Zeile vs. Ist */
+/**
+ * Unterkategorien: Posten mit Betrag 0 gehören zu einem Budget-Posten («gehört zu»).
+ * Ohne Angabe – und wenn es im Topf genau einen Budget-Posten gibt – automatisch zu diesem.
+ * Liefert den Namen des Budget-Postens oder '' (eigenständige Kategorie ohne Budget).
+ */
+export function parentOf(pot, line) {
+  const budgetLines = pot.lines.filter((l) => lineYearly(l) !== 0);
+  if (lineYearly(line) !== 0) return '';
+  if (line.parent && budgetLines.some((b) => b.name === line.parent)) return line.parent;
+  return budgetLines.length === 1 ? budgetLines[0].name : '';
+}
+
+/**
+ * Kategorie-Auswertung: Budget-Posten mit ihren Unterkategorien (children), Ist und Geplant.
+ * Buchungen ohne Kategorie zählen zum einzigen Budget-Posten, falls es nur einen gibt.
+ */
 export function categoryBreakdown(mon) {
-  const rows = mon.pot.lines.map((l) => {
-    const c = mon.byCat.get(l.name) || { actual: 0, planned: 0, count: 0 };
-    return { key: l.name, name: l.name, yearly: lineYearly(l), actual: c.actual, planned: c.planned, count: c.count };
-  });
-  const known = new Set(mon.pot.lines.map((l) => l.name));
-  for (const [cat, c] of mon.byCat) {
-    if (!known.has(cat)) rows.push({ key: cat, name: cat || 'Ohne Kategorie', yearly: 0, actual: c.actual, planned: c.planned, count: c.count, unbudgeted: true });
+  const pot = mon.pot;
+  const get = (key) => mon.byCat.get(key) || { actual: 0, planned: 0, count: 0 };
+  const budgetLines = pot.lines.filter((l) => lineYearly(l) !== 0);
+  const pool = budgetLines.length === 1 ? budgetLines[0].name : '';
+  const top = [];
+  const byName = new Map();
+  for (const l of pot.lines) {
+    if (lineYearly(l) === 0) continue;
+    const c = get(l.name);
+    const row = { key: l.name, name: l.name, yearly: lineYearly(l), actual: c.actual, planned: c.planned, count: c.count, ownActual: c.actual, children: [] };
+    top.push(row);
+    byName.set(l.name, row);
   }
-  return rows;
+  const addChild = (parentName, child) => {
+    const p = byName.get(parentName);
+    p.children.push(child);
+    p.actual += child.actual;
+    p.planned += child.planned;
+    p.count += child.count;
+  };
+  for (const l of pot.lines) {
+    if (lineYearly(l) !== 0) continue;
+    const c = get(l.name);
+    const child = { key: l.name, name: l.name, yearly: 0, actual: c.actual, planned: c.planned, count: c.count };
+    const parent = parentOf(pot, l);
+    if (parent) addChild(parent, child);
+    else top.push({ ...child, noBudget: true });
+  }
+  const known = new Set(pot.lines.map((l) => l.name));
+  for (const [cat, c] of mon.byCat) {
+    if (known.has(cat)) continue;
+    if (cat === '' && pool) addChild(pool, { key: '', name: 'ohne Unterkategorie', yearly: 0, actual: c.actual, planned: c.planned, count: c.count, uncategorized: true });
+    else top.push({ key: cat, name: cat || 'Ohne Kategorie', yearly: 0, actual: c.actual, planned: c.planned, count: c.count, unbudgeted: true });
+  }
+  // Unterkategorien nach Betrag sortieren, Anteil am Budget-Posten
+  for (const r of top) {
+    if (!r.children?.length) continue;
+    const ownName = r.name;
+    const own = get(ownName);
+    if (own.actual || own.planned) r.children.push({ key: ownName, name: `${ownName} (direkt)`, yearly: 0, actual: own.actual, planned: own.planned, count: own.count });
+    const total = r.actual + r.planned || 1;
+    r.children.sort((a, b) => (b.actual + b.planned) - (a.actual + a.planned));
+    for (const ch of r.children) ch.share = (ch.actual + ch.planned) / total;
+  }
+  return top;
 }
 
 /** Einfacher Hash für Duplikat-Erkennung beim Import */
