@@ -22,7 +22,7 @@ let filterCat = null; // Kategorie-Filter (z.B. «Geschenke»), null = alle
 let filterAcc = null; // null = alle, '' = ohne Angabe
 let accOpen = true;
 // Ansicht: Kalendermonat oder Abrechnungszyklus (offen seit letzter Abrechnung, frühere Zyklen, frei wählbar)
-const view = { mode: 'month', sel: 'open', from: '', to: '', year: null };
+const view = { mode: 'cycle', sel: 'open', from: '', to: '', year: null };
 const lastDay = (ymStr) => { const [yy, mm] = ymStr.split('-').map(Number); return `${ymStr}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`; };
 let search = '';
 
@@ -300,9 +300,9 @@ function monthPanel() {
   const sumBy = (key, planned = null) => txMonth.filter((t) => t.pot === key && (planned === null || (t.date > today) === planned)).reduce((a, t) => a + t.amount, 0);
 
   const modeSegs = h('div', { class: 'segs', role: 'tablist' },
+    h('button', { class: 'seg' + (isYear ? ' on' : ''), onclick: () => { view.mode = 'year'; view.year = Number(month.slice(0, 4)); render(); } }, 'Jahr'),
     h('button', { class: 'seg' + (view.mode === 'month' ? ' on' : ''), onclick: () => { view.mode = 'month'; render(); } }, 'Monat'),
-    h('button', { class: 'seg' + (isRange ? ' on' : ''), onclick: () => { view.mode = 'cycle'; render(); } }, 'Abrechnung'),
-    h('button', { class: 'seg' + (isYear ? ' on' : ''), onclick: () => { view.mode = 'year'; view.year = Number(month.slice(0, 4)); render(); } }, 'Jahr')
+    h('button', { class: 'seg' + (isRange ? ' on' : ''), onclick: () => { view.mode = 'cycle'; render(); } }, 'Abrechnung')
   );
   const settleBtn = h('button', { class: 'btn primary settle-btn', onclick: settleNow, title: 'Abrechnungszeitpunkt speichern' }, 'Jetzt abrechnen');
   const setCustom = (f, t) => {
@@ -317,30 +317,23 @@ function monthPanel() {
     cyc.closed.map((c) => h('option', { value: c.id, selected: view.sel === c.id }, `Abrechnung ${fmtStamp(c.to)}${c.from ? ` (ab ${fmtStamp(c.from)})` : ''}`)),
     h('option', { value: 'custom', selected: view.sel === 'custom' }, 'Zeitraum frei wählen …')
   );
-  const head = isRange
-    ? h('div', { class: 'month-head range' },
-      modeSegs,
-      cycleSelect,
+  // Links der jeweilige Inhalt, rechts immer an derselben Stelle die Umschaltung Jahr | Monat | Abrechnung
+  const left = isRange
+    ? [cycleSelect,
       view.sel === 'custom' ? [
         h('label', null, 'von', h('input', { type: 'date', value: from, onchange: (e) => setCustom(e.target.value, to) })),
         h('label', null, 'bis', h('input', { type: 'date', value: to, onchange: (e) => setCustom(from, e.target.value) }))] : null,
-      h('div', { class: 'spacer' }),
-      settleBtn)
-    : isYear ? h('div', { class: 'month-head' },
-      h('button', { class: 'icon-btn', 'aria-label': 'Vorheriges Jahr', onclick: () => { view.year--; render(); } }, '‹'),
-      h('h2', null, `Jahr ${view.year}`),
-      h('button', { class: 'icon-btn', 'aria-label': 'Nächstes Jahr', onclick: () => { view.year++; render(); } }, '›'),
-      view.year !== Number(today.slice(0, 4)) ? h('button', { class: 'link', onclick: () => { view.year = Number(today.slice(0, 4)); render(); } }, 'Heute') : null,
-      h('div', { class: 'spacer' }),
-      modeSegs)
-    : h('div', { class: 'month-head' },
-      h('button', { class: 'icon-btn', 'aria-label': 'Vorheriger Monat', onclick: () => { month = shiftMonth(month, -1); render(); } }, '‹'),
-      h('h2', null, `${MONTHS[m - 1]} ${y}`),
-      h('button', { class: 'icon-btn', 'aria-label': 'Nächster Monat', onclick: () => { month = shiftMonth(month, 1); render(); } }, '›'),
-      month !== ym(today) ? h('button', { class: 'link', onclick: () => { month = ym(today); render(); } }, 'Heute') : null,
-      h('div', { class: 'spacer' }),
-      modeSegs
-    );
+      settleBtn]
+    : isYear
+      ? [h('button', { class: 'icon-btn', 'aria-label': 'Vorheriges Jahr', onclick: () => { view.year--; render(); } }, '‹'),
+        h('h2', null, `Jahr ${view.year}`),
+        h('button', { class: 'icon-btn', 'aria-label': 'Nächstes Jahr', onclick: () => { view.year++; render(); } }, '›'),
+        view.year !== Number(today.slice(0, 4)) ? h('button', { class: 'link', onclick: () => { view.year = Number(today.slice(0, 4)); render(); } }, 'Heute') : null]
+      : [h('button', { class: 'icon-btn', 'aria-label': 'Vorheriger Monat', onclick: () => { month = shiftMonth(month, -1); render(); } }, '‹'),
+        h('h2', null, `${MONTHS[m - 1]} ${y}`),
+        h('button', { class: 'icon-btn', 'aria-label': 'Nächster Monat', onclick: () => { month = shiftMonth(month, 1); render(); } }, '›'),
+        month !== ym(today) ? h('button', { class: 'link', onclick: () => { month = ym(today); render(); } }, 'Heute') : null];
+  const head = h('div', { class: 'month-head' }, h('div', { class: 'mh-left' }, left), modeSegs);
 
   // Im Zeitraum-Modus gibt es kein Monatsbudget → Kacheln zeigen nur die Summe
   const rangeTiles = h('div', { class: 'pot-tiles' },
