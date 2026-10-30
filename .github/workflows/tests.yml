@@ -23,7 +23,13 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Unit- und API-Tests
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+      - name: Fehlgeschlagene Tests als Anmerkung
+        if: failure()
+        run: |
+          grep -E '^not ok|^\s+(error|expected|actual):' test-output.txt | head -40 | while IFS= read -r l; do echo "::error title=Test::$l"; done
 
   browser:
     name: Oberfläche im Browser (Desktop & Handy)
@@ -38,7 +44,13 @@ jobs:
           npm install --no-save --no-package-lock playwright@1.63.0
           npx playwright install --with-deps chromium
       - name: Browser-Tests
-        run: npm run test:e2e
+        run: |
+          set -o pipefail
+          npm run test:e2e 2>&1 | tee e2e-output.txt
+      - name: Fehlgeschlagene Browser-Tests als Anmerkung
+        if: failure()
+        run: |
+          grep -E '^not ok|^\s+(error|expected|actual):|strict mode|waiting for|Timeout|JavaScript-Fehler|  - ' e2e-output.txt | head -40 | while IFS= read -r l; do echo "::error title=Browser-Test::$l"; done
 
   docker:
     name: Docker-Image (wie auf der DS218+)
