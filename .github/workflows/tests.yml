@@ -53,11 +53,47 @@ jobs:
             sleep 2
           done
           curl -fsS http://localhost:8080/api/status | grep -q '"needsSetup":true'
+          curl -fsS http://localhost:8080/api/status | grep -q "\"version\":\"$(node -p "require('./package.json').version")\""
           curl -fsS http://localhost:8080/ | grep -q '<title>Kässeli</title>'
           test -f data/budget.json
+      - name: Wie auf der NAS mit eingebundenem Git-Ordner (Aktualisieren über die App)
+        run: |
+          docker run -d --name kaesseli2 -p 8082:8080 -v "$PWD":/app -e RESTART_ON_UPDATE=true kaesseli:latest
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8082/api/status | grep -q '"version"'; then echo "Kässeli läuft (Git-Modus)"; exit 0; fi
+            sleep 1
+          done
+          docker logs kaesseli2
+          exit 1
       - name: Container-Log bei Fehler
         if: failure()
         run: docker compose logs
       - name: Aufräumen
         if: always()
-        run: docker compose down
+        run: |
+          docker compose down
+          docker rm -f kaesseli2 || true
+
+  # Nur wenn alles grün ist: Version als vX.Y.Z markieren – nur solche bietet «Aktualisieren» in der App an
+  release:
+    name: Version markieren
+    needs: [logik-und-server, browser, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Tag setzen, falls die Version neu ist
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          if git rev-parse -q --verify "refs/tags/$v" >/dev/null; then
+            echo "$v gibt es schon – nichts zu tun" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git tag "$v"
+          git push origin "$v"
+          echo "### Neue Version $v freigegeben" >> "$GITHUB_STEP_SUMMARY"

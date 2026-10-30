@@ -502,3 +502,11 @@ table.cats td.share { font-size: .82rem; }
 
 table.lines select.parent-select { color: var(--ink-2); font-style: italic; }
 table.lines th:nth-child(3)::after { content: ' / gehört zu'; text-transform: none; font-weight: 500; }
+
+/* Über Kässeli */
+.about .changelog { display: flex; flex-direction: column; gap: .6rem; margin-top: .4rem; max-height: 340px; overflow: auto; }
+.about .cl-entry ul { margin: .2rem 0 0; padding-left: 1.1rem; font-size: .88rem; color: var(--ink-2); }
+.about details summary { cursor: pointer; font-weight: 600; }
+.update-box:empty { display: none; }
+.update-box { display: flex; flex-direction: column; gap: .5rem; }
+.about .warn { color: #b45309; }

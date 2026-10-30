@@ -1,6 +1,6 @@
 // Service Worker: macht die App installierbar und lädt die Oberfläche auch bei schlechter Verbindung.
 // Strategie: zuerst Netzwerk (immer aktuelle Version), bei Ausfall aus dem Cache. API-Aufrufe werden nie gecacht.
-const CACHE = 'kaesseli-shell-v1';
+const CACHE = 'kaesseli-shell-__VERSION__'; // setzt der Server (Version aus package.json)
 
 self.addEventListener('install', (e) => self.skipWaiting());
 self.addEventListener('activate', (e) => {

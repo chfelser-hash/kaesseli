@@ -57,6 +57,14 @@ export class Store {
     return result;
   }
 
+  /** Sofortige Sicherungskopie mit Bezeichnung (z.B. vor einem Update) */
+  snapshot(label = 'manuell') {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const name = `${label}-${stamp}.json`;
+    fs.writeFileSync(path.join(this.backupDir, name), JSON.stringify(this.data));
+    return name;
+  }
+
   replaceAll(newData) {
     this.#dailyBackup();
     // Vor einer Wiederherstellung immer den aktuellen Stand sichern

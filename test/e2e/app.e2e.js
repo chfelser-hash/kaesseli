@@ -160,6 +160,19 @@ test('Handy-Ansicht: kein seitliches Scrollen, Tab-Leiste unten', async () => {
   noErrors('Handy');
 });
 
+test('Über Kässeli: Version, Änderungen, Aktualisieren ausgeschaltet', async () => {
+  await page.setViewportSize({ width: 1300, height: 1000 });
+  await go('einstellungen');
+  const about = page.locator('.card.about');
+  assert.match(await about.innerText(), /Version \d+\.\d+\.\d+/);
+  await about.locator('summary', { hasText: 'Was ist neu?' }).click();
+  await page.waitForSelector('.about .cl-entry');
+  await about.locator('button', { hasText: 'Nach Updates suchen' }).click();
+  await page.waitForSelector('.update-box p');
+  assert.match(await page.locator('.update-box').innerText(), /ausgeschaltet/);
+  noErrors('Über Kässeli');
+});
+
 test('Abmelden führt zur Anmeldung', async () => {
   await page.setViewportSize({ width: 1300, height: 1000 });
   await go('einstellungen');

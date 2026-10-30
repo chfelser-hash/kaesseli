@@ -9,7 +9,12 @@ services:
     volumes:
       # Daten bleiben ausserhalb des Containers (auf der Synology z.B. /volume1/docker/kaesseli/data)
       - ./data:/data
+      # Programmcode direkt aus diesem Git-Ordner: «Mehr → Über Kässeli → Aktualisieren» holt neue Versionen
+      # ohne Neubau des Containers. Wer das nicht will: diese Zeile entfernen und UPDATE_ENABLED=false setzen.
+      - ./:/app
     environment:
       - TZ=Europe/Zurich
       # Auf "true" setzen, wenn die App nur über HTTPS (Reverse Proxy) erreichbar ist
       - COOKIE_SECURE=false
+      # Nach «Aktualisieren» neu starten (Docker startet den Container automatisch wieder)
+      - RESTART_ON_UPDATE=true

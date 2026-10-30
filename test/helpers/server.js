@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-export async function startServer({ dataDir } = {}) {
+export async function startServer({ dataDir, env = {} } = {}) {
   const dir = dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'kaesseli-test-'));
   const port = 20000 + Math.floor(Math.random() * 20000);
   const proc = spawn(process.execPath, ['server/index.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dir },
+    // Aktualisieren standardmässig aus (kein Zugriff auf GitHub in Tests)
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dir, UPDATE_ENABLED: 'false', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';

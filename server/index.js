@@ -6,12 +6,20 @@ import { fileURLToPath } from 'node:url';
 import { Store, newId } from './store.js';
 import { Auth, httpError } from './auth.js';
 import { createYearTemplate } from './template.js';
+import { createUpdater, parseChangelog } from './update.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'data'));
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
+// Version aus package.json, Änderungsliste aus CHANGELOG.md
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+const CHANGELOG = (() => { try { return parseChangelog(fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8')); } catch { return []; } })();
+const VERSION_DATE = CHANGELOG.find((x) => x.version === VERSION)?.date || '';
+// Aktualisieren über die App (siehe server/update.js). UPDATE_ROOT nur für Tests.
+const updater = createUpdater({ root: process.env.UPDATE_ROOT || ROOT, version: VERSION, enabled: process.env.UPDATE_ENABLED !== 'false' });
+const RESTART_ON_UPDATE = process.env.RESTART_ON_UPDATE === 'true';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const store = new Store(DATA_DIR);
@@ -130,7 +138,7 @@ function cleanYear(y, year) {
 
 function publicData(user) {
   const d = store.data;
-  return { rev: d.rev, updatedAt: d.updatedAt, years: d.years, transactions: d.transactions, settlements: d.settlements, settings: d.settings, user, users: auth.listUsers() };
+  return { rev: d.rev, updatedAt: d.updatedAt, years: d.years, transactions: d.transactions, settlements: d.settlements, settings: d.settings, user, users: auth.listUsers(), version: VERSION, versionDate: VERSION_DATE };
 }
 
 // ---------- API ----------
@@ -143,7 +151,7 @@ async function api(req, res, url) {
 
   if (p === '/api/status' && method === 'GET') {
     const user = auth.userForToken(cookies(req).sid);
-    return send(res, 200, { needsSetup: !auth.hasUsers, user });
+    return send(res, 200, { needsSetup: !auth.hasUsers, user, version: VERSION });
   }
   if (p === '/api/setup' && method === 'POST') {
     if (auth.hasUsers) throw httpError(403, 'Bereits eingerichtet');
@@ -167,7 +175,20 @@ async function api(req, res, url) {
   if (!user) throw httpError(401, 'Nicht angemeldet');
 
   if (p === '/api/data' && method === 'GET') return send(res, 200, publicData(user));
-  if (p === '/api/rev' && method === 'GET') return send(res, 200, { rev: store.rev });
+  if (p === '/api/rev' && method === 'GET') return send(res, 200, { rev: store.rev, version: VERSION });
+  if (p === '/api/changelog' && method === 'GET') return send(res, 200, { version: VERSION, date: VERSION_DATE, changelog: CHANGELOG.slice(0, 20) });
+
+  // ----- Aktualisieren (Mehr → Über Kässeli) -----
+  if (p === '/api/update' && method === 'GET') return send(res, 200, await updater.check());
+  if (p === '/api/update' && method === 'POST') {
+    const b = await readBody(req);
+    const backup = store.snapshot('vor-update-' + String(b.version || '').replace(/[^\d.]/g, ''));
+    const r = await updater.apply(b.version);
+    send(res, 200, { ...r, backup, restart: RESTART_ON_UPDATE });
+    // Docker startet den Container neu (restart: unless-stopped) – mit dem neuen Programmcode
+    if (RESTART_ON_UPDATE) setTimeout(() => process.exit(0), 500);
+    return;
+  }
 
   // Buchungen
   if (p === '/api/tx' && method === 'POST') {
@@ -335,6 +356,8 @@ function serveStatic(req, res, url) {
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'Nicht gefunden');
     const ext = path.extname(file);
+    // Service Worker: Cache-Name an die Version koppeln → jede neue Version lädt die Oberfläche frisch
+    if (rel === '/sw.js') buf = Buffer.from(buf.toString('utf8').replaceAll('__VERSION__', VERSION));
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       // HTML/JS/CSS immer frisch prüfen, damit Updates sofort ankommen
@@ -364,6 +387,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Kässeli läuft auf http://localhost:${PORT}  (Daten: ${DATA_DIR})`);
+  console.log(`Kässeli ${VERSION} läuft auf http://localhost:${PORT}  (Daten: ${DATA_DIR})`);
   if (!auth.hasUsers) console.log('Noch kein Benutzer vorhanden – beim ersten Aufruf wird ein Konto angelegt.');
 });

@@ -1,7 +1,7 @@
 // Tab «Mehr»: Konten, Regeln, Benutzer, Sicherung
 import { h, toast, modal, confirmDialog } from '../ui.js';
 import { state, api, render, reload, currentYear } from '../app.js';
-import { fmtStamp } from '../calc.js';
+import { fmtStamp, fmtDate } from '../calc.js';
 import { settleNow } from './erfassen.js';
 
 export function renderEinstellungen() {
@@ -12,7 +12,8 @@ export function renderEinstellungen() {
       rulesCard(),
       usersCard(),
       backupCard(),
-      profilesCard()
+      profilesCard(),
+      aboutCard()
     )
   );
 }
@@ -143,6 +144,87 @@ async function changePassword() {
     },
   }]);
   if (ok) toast('Passwort geändert');
+}
+
+// ---------- Über Kässeli: Version, Änderungen, Aktualisieren ----------
+function aboutCard() {
+  const v = state.data.version || '?';
+  const list = h('div', { class: 'changelog' });
+  const det = h('details', { ontoggle: async () => {
+    if (!det.open || list.childElementCount) return;
+    try {
+      const { changelog } = await api('GET', '/api/changelog');
+      list.replaceChildren(...changelog.map(changeEntry));
+    } catch (ex) { list.replaceChildren(h('p', { class: 'hint' }, ex.message)); }
+  } }, h('summary', null, 'Was ist neu?'), list);
+  const upd = h('div', { class: 'update-box' });
+  const checkBtn = h('button', { class: 'btn', onclick: () => checkUpdates(upd, checkBtn) }, 'Nach Updates suchen');
+  return h('section', { class: 'card about' },
+    h('h2', null, 'Über Kässeli'),
+    h('p', null, h('strong', null, `Version ${v}`), state.data.versionDate ? h('span', { class: 'muted' }, ` · ${fmtDate(state.data.versionDate)}`) : null),
+    h('div', { class: 'row gap wrap' }, checkBtn),
+    upd,
+    det
+  );
+}
+
+const changeEntry = (c) => h('div', { class: 'cl-entry' },
+  h('strong', null, c.version), h('span', { class: 'muted small' }, ' · ' + fmtDate(c.date)),
+  h('ul', null, c.changes.map((x) => h('li', null, x))));
+
+async function checkUpdates(box, btn) {
+  btn.disabled = true;
+  box.replaceChildren(h('p', { class: 'hint' }, 'Frage GitHub nach neuen Versionen …'));
+  let r;
+  try {
+    r = await api('GET', '/api/update');
+  } catch (ex) {
+    btn.disabled = false;
+    return box.replaceChildren(h('p', { class: 'form-error' }, ex.message));
+  }
+  btn.disabled = false;
+  if (!r.enabled) return box.replaceChildren(h('p', { class: 'hint' }, r.reason));
+  const parts = [];
+  if (r.dirty?.length) parts.push(h('p', { class: 'warn' }, `Achtung: ${r.dirty.length} Programmdatei(en) wurden auf der NAS von Hand geändert – eine Aktualisierung überschreibt sie.`));
+  if (r.newer.length) {
+    const target = r.newer[0];
+    parts.push(
+      h('p', null, h('strong', null, `Version ${target} verfügbar`), r.newer.length > 1 ? h('span', { class: 'muted small' }, ` (${r.newer.length} neue Versionen)`) : null),
+      r.changelog.length ? h('div', { class: 'changelog' }, r.changelog.map(changeEntry)) : null,
+      h('button', { class: 'btn primary', onclick: () => applyUpdate(box, target, false) }, `Jetzt auf ${target} aktualisieren`)
+    );
+  } else parts.push(h('p', { class: 'pos' }, `✓ Kässeli ist aktuell (${r.current}).`));
+  const others = r.versions.filter((x) => x !== r.current && !r.newer.includes(x));
+  if (others.length) {
+    const sel = h('select', null, others.map((x) => h('option', { value: x }, x)));
+    parts.push(h('details', null, h('summary', null, 'Zu einer früheren Version zurück'),
+      h('p', { class: 'hint' }, 'Falls nach einem Update etwas nicht passt. Eure Daten bleiben, vorher wird gesichert.'),
+      h('div', { class: 'row gap' }, sel, h('button', { class: 'btn', onclick: () => applyUpdate(box, sel.value, true) }, 'Wechseln'))));
+  }
+  box.replaceChildren(...parts.filter(Boolean));
+}
+
+async function applyUpdate(box, target, back) {
+  if (!(await confirmDialog(back ? 'Frühere Version' : 'Aktualisieren',
+    `Kässeli auf Version ${target} umstellen? Vorher wird eine Sicherung angelegt. Kässeli startet danach neu (ein paar Sekunden) – bitte keine Eingaben in dieser Zeit.`, back ? 'Wechseln' : 'Aktualisieren', back))) return;
+  box.replaceChildren(h('p', null, `Stelle auf ${target} um …`));
+  let r;
+  try {
+    r = await api('POST', '/api/update', { version: target });
+  } catch (ex) {
+    return box.replaceChildren(h('p', { class: 'form-error' }, ex.message));
+  }
+  if (!r.restart) return box.replaceChildren(h('p', { class: 'warn' }, `Version ${target} ist eingespielt. Bitte Kässeli jetzt neu starten (z.B. start.bat schliessen und wieder öffnen).`));
+  box.replaceChildren(h('p', null, 'Kässeli startet neu …'));
+  // Warten, bis der Server mit der neuen Version antwortet, dann die Seite neu laden
+  for (let i = 0; i < 60; i++) {
+    await new Promise((res) => setTimeout(res, 2000));
+    try {
+      const st = await (await fetch('/api/status', { cache: 'no-store' })).json();
+      if (st.version === target) { location.reload(); return; }
+    } catch { /* startet noch */ }
+  }
+  box.replaceChildren(h('p', { class: 'warn' }, 'Kässeli antwortet noch nicht mit der neuen Version. Seite in einer Minute neu laden.'));
 }
 
 function backupCard() {

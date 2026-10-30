@@ -75,7 +75,27 @@ Für Android-Installation und Zugriff von ausserhalb wird HTTPS benötigt:
 Die App verlangt immer ein Login; nach 8 Fehlversuchen wird für 15 Minuten gesperrt. Sessions sind 90 Tage gültig.
 Wer die App nur über HTTPS nutzt, kann in `docker-compose.yml` `COOKIE_SECURE=true` setzen.
 
-### Update
+### Aktualisieren über die App
+
+Unter **Mehr → Über Kässeli** zeigt Kässeli die laufende Version und die Änderungen. **«Nach Updates suchen»** fragt GitHub nach neuen Versionen; **«Jetzt aktualisieren»** spielt sie ein: Kässeli legt vorher eine Sicherung an (`data/backups/vor-update-…`), stellt den Programmordner um und startet von selbst neu. Unter «Zu einer früheren Version zurück» geht es auch rückwärts.
+
+Angeboten werden nur Versionen, die auf GitHub **alle Tests bestanden** haben: Erst dann setzt GitHub die Markierung `vX.Y.Z`.
+
+Voraussetzung: Kässeli wurde per `git clone` installiert, und `docker-compose.yml` bindet den Programmordner ein (`./:/app`). Das Repo ist privat; der Zugangsschlüssel (Token, nur Lesen) steckt in der Remote-URL des Klons auf der NAS.
+
+**Einmalige Umstellung per SSH** (danach nie mehr nötig):
+
+```
+cd /volume1/docker/kaesseli && sudo docker run --rm -v "$PWD":/repo -w /repo alpine/git -c safe.directory='*' pull && sudo docker compose up -d --build
+```
+
+### Update von Hand (falls nötig)
+
+```
+cd /volume1/docker/kaesseli && sudo docker run --rm -v "$PWD":/repo -w /repo alpine/git -c safe.directory='*' pull && sudo docker compose restart
+```
+
+### Update (ohne Git-Klon)
 
 Neue Version ins Verzeichnis kopieren bzw. `git pull`, dann im Container Manager das Projekt **stoppen → erstellen (Build)** → starten. Die Daten bleiben erhalten.
 

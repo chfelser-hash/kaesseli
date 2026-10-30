@@ -155,3 +155,4 @@ test('statische Dateien: App wird ausgeliefert, kein Zugriff ausserhalb von publ
   assert.equal(index.headers.get('x-frame-options'), 'DENY');
   assert.ok(index.headers.get('content-security-policy'));
 });
+

@@ -95,7 +95,7 @@ function renderChrome() {
   const years = yearList();
   const header = document.getElementById('topbar');
   header.replaceChildren(
-    h('div', { class: 'brand' }, h('span', { class: 'logo' }, 'CHF'), h('span', null, 'Kässeli')),
+    h('div', { class: 'brand', title: state.data.version ? `Kässeli ${state.data.version}` : 'Kässeli' }, h('span', { class: 'logo' }, 'CHF'), h('span', null, 'Kässeli')),
     h('nav', { class: 'tabs' },
       VIEWS.map((v) => h('a', { href: '#' + v.id, class: 'tab' + (state.view === v.id ? ' on' : '') }, h('span', { class: 'ti' }, icon(v.id)), h('span', null, v.label)))
     ),
@@ -146,7 +146,12 @@ function startPolling() {
   const check = async () => {
     if (document.hidden || !state.data || state.busy) return;
     try {
-      const { rev } = await api('GET', '/api/rev');
+      const { rev, version } = await api('GET', '/api/rev');
+      // Auf dem Server wurde eine neue Version eingespielt → einmal Bescheid geben
+      if (version && state.loadedVersion && version !== state.loadedVersion && !state.versionNotified) {
+        state.versionNotified = true;
+        toast(`Neue Kässeli-Version ${version} verfügbar`, { duration: 60000, action: { label: 'Neu laden', fn: () => location.reload() } });
+      }
       if (rev !== state.data.rev) {
         await reload();
         render();
@@ -162,6 +167,7 @@ async function start() {
   const st = await (await fetch('/api/status', { credentials: 'same-origin' })).json();
   if (!st.user) return showLogin(st.needsSetup);
   await reload();
+  state.loadedVersion = state.data.version;
   state.view = (location.hash || '#erfassen').slice(1);
   render();
   startPolling();
