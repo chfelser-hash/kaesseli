@@ -50,7 +50,7 @@ Hinweise zur Übernahme:
 Die DS218+ (Intel x86) unterstützt den **Container Manager** (DSM 7.2).
 
 1. Im Paket-Zentrum **Container Manager** installieren.
-2. In der File Station einen Ordner anlegen, z.B. `/docker/kaesseli`, und den Inhalt dieses Repos hineinkopieren (oder per SSH: `git clone https://github.com/chfelser-hash/kaesseli.git /volume1/docker/kaesseli`).
+2. In der File Station einen Ordner anlegen, z.B. `/docker/kaesseli`, und den Inhalt dieses Repos hineinkopieren (oder per SSH, ohne Git auf der NAS: `sudo docker run --rm -v /volume1/docker:/repo -w /repo alpine/git clone https://github.com/chfelser-hash/kaesseli.git`).
 3. Container Manager → **Projekt** → **Erstellen**
    - Projektname: `kaesseli`
    - Pfad: `/docker/kaesseli`
@@ -81,7 +81,7 @@ Unter **Mehr → Über Kässeli** zeigt Kässeli die laufende Version und die Ä
 
 Angeboten werden nur Versionen, die auf GitHub **alle Tests bestanden** haben: Erst dann setzt GitHub die Markierung `vX.Y.Z`.
 
-Voraussetzung: Kässeli wurde per `git clone` installiert, und `docker-compose.yml` bindet den Programmordner ein (`./:/app`). Das Repo ist privat; der Zugangsschlüssel (Token, nur Lesen) steckt in der Remote-URL des Klons auf der NAS.
+Voraussetzung: Kässeli wurde per `git clone` installiert, und `docker-compose.yml` bindet den Programmordner ein (`./:/app`). Das Repo ist öffentlich – die NAS braucht keinen Zugangsschlüssel.
 
 **Einmalige Umstellung per SSH** (danach nie mehr nötig):
 

@@ -1,5 +1,5 @@
 // Aktualisieren über «Mehr → Über Kässeli»: holt geprüfte Versionen (Git-Tags vX.Y.Z, die GitHub erst nach grünen
-// Tests setzt) aus dem GitHub-Repo (privat: Zugangsschlüssel steckt in der Remote-URL des Klons) und stellt den Programmordner darauf um. Daten liegen ausserhalb und
+// Tests setzt) aus dem GitHub-Repo und stellt den Programmordner darauf um. Daten liegen ausserhalb und
 // bleiben unberührt; vorher legt der Server eine Sicherung an. Danach startet Kässeli neu (Docker übernimmt das).
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
