@@ -3,6 +3,7 @@
   "short_name": "Kässeli",
   "description": "Ausgaben erfassen und Budget überwachen",
   "lang": "de-CH",
+  "id": "/",
   "start_url": "/#erfassen",
   "scope": "/",
   "display": "standalone",
